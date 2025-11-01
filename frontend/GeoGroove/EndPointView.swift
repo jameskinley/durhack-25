@@ -16,12 +16,28 @@ struct EndPointView: View {
     @StateObject private var addressSearch = AddressSearchViewModel()
     @State private var position = MapCameraPosition.automatic
     @State private var showingSuggestions = false
+    @State private var selectedCoordinate: CLLocationCoordinate2D?
     
     var body: some View {
         VStack(spacing: 10) {
             ZStack(alignment: .bottomTrailing) {
                 Map(position: $position) {
                     UserAnnotation()
+                    
+                    // Show pin for selected end location
+                    if let coordinate = selectedCoordinate {
+                        Annotation("End", coordinate: coordinate) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 40, height: 40)
+                                    .shadow(radius: 4)
+                                Image(systemName: "flag.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 24))
+                            }
+                        }
+                    }
                 }
                 .mapControls {
                     MapUserLocationButton()
@@ -31,24 +47,37 @@ struct EndPointView: View {
             VStack(spacing: 0) {
                 HStack {
                     Image(systemName: "flag.fill")
-                    TextField("End Point", text: $addressSearch.searchQuery)
-                        .autocorrectionDisabled()
-                        .padding()
-                        .background(Color.white)
-                        .cornerRadius(20)
-                        .shadow(radius: 0.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .onChange(of: addressSearch.searchQuery) { oldValue, newValue in
-                            showingSuggestions = !newValue.isEmpty
-                        }
                     
-                    Button(action: {
-                        // TODO: Navigate to route planning or confirmation
-                        print("Start: \(startLocation), End: \(addressSearch.searchQuery)")
-                    }) {
+                    ZStack(alignment: .trailing) {
+                        TextField("End Point", text: $addressSearch.searchQuery)
+                            .autocorrectionDisabled()
+                            .padding()
+                            .padding(.trailing, addressSearch.searchQuery.isEmpty ? 0 : 30)
+                            .background(Color.white)
+                            .cornerRadius(20)
+                            .shadow(radius: 0.5)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                            .onChange(of: addressSearch.searchQuery) { oldValue, newValue in
+                                showingSuggestions = !newValue.isEmpty
+                            }
+                        
+                        if !addressSearch.searchQuery.isEmpty {
+                            Button(action: {
+                                addressSearch.searchQuery = ""
+                                showingSuggestions = false
+                                selectedCoordinate = nil
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                                    .padding(.trailing, 12)
+                            }
+                        }
+                    }
+                    
+                    NavigationLink(destination: RouteOptionsView(startLocation: startLocation, endLocation: addressSearch.searchQuery)) {
                         Image(systemName: "checkmark")
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
@@ -125,6 +154,7 @@ struct EndPointView: View {
                 // Update the text field with selected address
                 addressSearch.searchQuery = completion.title
                 showingSuggestions = false
+                selectedCoordinate = coordinate
                 
                 // Center map on selected location
                 let region = MKCoordinateRegion(

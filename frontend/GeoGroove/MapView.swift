@@ -15,12 +15,28 @@ struct MapView: View {
     @State private var position = MapCameraPosition.automatic
     @State private var endPoint: String = ""
     @State private var showingSuggestions = false
+    @State private var selectedCoordinate: CLLocationCoordinate2D?
     
     var body: some View {
         VStack(spacing: 10) {
             ZStack(alignment: .bottomTrailing) {
                 Map(position: $position) {
                     UserAnnotation()
+                    
+                    // Show pin for selected start location
+                    if let coordinate = selectedCoordinate {
+                        Annotation("Start", coordinate: coordinate) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 40, height: 40)
+                                    .shadow(radius: 4)
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 24))
+                            }
+                        }
+                    }
                 }
                 .mapControls {
                     MapUserLocationButton()
@@ -30,19 +46,35 @@ struct MapView: View {
             VStack(spacing: 0) {
                 HStack {
                     Image(systemName: "location")
-                    TextField("Start Point", text: $addressSearch.searchQuery)
-                        .autocorrectionDisabled()
-                        .padding()
-                        .background(Color.white)
-                        .cornerRadius(20)
-                        .shadow(radius: 0.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .onChange(of: addressSearch.searchQuery) { oldValue, newValue in
-                            showingSuggestions = !newValue.isEmpty
+                    
+                    ZStack(alignment: .trailing) {
+                        TextField("Start Point", text: $addressSearch.searchQuery)
+                            .autocorrectionDisabled()
+                            .padding()
+                            .padding(.trailing, addressSearch.searchQuery.isEmpty ? 0 : 30)
+                            .background(Color.white)
+                            .cornerRadius(20)
+                            .shadow(radius: 0.5)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                            .onChange(of: addressSearch.searchQuery) { oldValue, newValue in
+                                showingSuggestions = !newValue.isEmpty
+                            }
+                        
+                        if !addressSearch.searchQuery.isEmpty {
+                            Button(action: {
+                                addressSearch.searchQuery = ""
+                                showingSuggestions = false
+                                selectedCoordinate = nil
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                                    .padding(.trailing, 12)
+                            }
                         }
+                    }
                     
                     NavigationLink(destination: EndPointView(startLocation: addressSearch.searchQuery)) {
                         Image(systemName: "arrow.right")
@@ -159,6 +191,8 @@ struct MapView: View {
             return
         }
         
+        selectedCoordinate = userLocation.coordinate
+        
         // Use reverse geocoding to get address from coordinates
         let geocoder = CLGeocoder()
         let location = CLLocation(latitude: userLocation.coordinate.latitude, longitude: userLocation.coordinate.longitude)
@@ -184,6 +218,7 @@ struct MapView: View {
                 // Update the text field with selected address
                 addressSearch.searchQuery = completion.title
                 showingSuggestions = false
+                selectedCoordinate = coordinate
                 
                 // Center map on selected location
                 let region = MKCoordinateRegion(
