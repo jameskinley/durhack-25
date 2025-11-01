@@ -11,6 +11,7 @@ import Combine
 
 struct ContentView: View {
     
+    @StateObject private var locationManager = LocationManager()
     @State private var position = MapCameraPosition.automatic
     @State private var startPoint: String = ""
     @State private var endPoint: String = ""
@@ -19,10 +20,10 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 10){
-                ZStack {
+                ZStack(alignment: .bottomTrailing) {
                     Map(position: $position)
                     Button {
-    //                    centerOnUser()
+                        centerOnUser()
                     } label: {
                         Image(systemName: "location.fill")
                             .foregroundColor(.white)
@@ -54,7 +55,27 @@ struct ContentView: View {
                 .presentationBackgroundInteraction(.enabled(upThrough: .large))
                 
             }
+            .onAppear {
+                locationManager.requestAuthorization()
+            }
         }
+    }
+    
+    private func centerOnUser() {
+        guard let userLocation = locationManager.lastLocation else {
+            print("User location not available")
+            return
+        }
+        
+        let userCoordinate = userLocation.coordinate
+        print(userCoordinate)
+        let region = MKCoordinateRegion(
+            center: userCoordinate,
+            latitudinalMeters: 1000,
+            longitudinalMeters: 1000
+        )
+        
+        position = .region(region)
     }
 }
 
