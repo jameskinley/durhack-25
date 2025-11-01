@@ -10,9 +10,22 @@
 		4DED37432EB651D400149BDB /* GeoGroove.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GeoGroove.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4DED37912EB6C87500149BDB /* Exceptions for "GeoGroove" folder in "GeoGroove" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 4DED37422EB651D400149BDB /* GeoGroove */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4DED37452EB651D400149BDB /* GeoGroove */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4DED37912EB6C87500149BDB /* Exceptions for "GeoGroove" folder in "GeoGroove" target */,
+			);
 			path = GeoGroove;
 			sourceTree = "<group>";
 		};
@@ -266,7 +279,12 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = GeoGroove/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Location Always";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Location ALWAYS";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Tempoary Location";
 				INFOPLIST_KEY_NSLocationUsageDescription = "We use your location to plan routes and show your position on the map";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location in use";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -311,7 +329,12 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = GeoGroove/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Location Always";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Location ALWAYS";
+				INFOPLIST_KEY_NSLocationTemporaryUsageDescriptionDictionary = "Tempoary Location";
 				INFOPLIST_KEY_NSLocationUsageDescription = "We use your location to plan routes and show your position on the map";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location in use";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
