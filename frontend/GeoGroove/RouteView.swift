@@ -14,8 +14,8 @@ struct RouteView: View {
     let startLocation: String
     let endLocation: String
     let transportType: RouteOptionsView.TransportType
-    let genre: String
-    let decade: String
+    let genres: String
+    let decades: String
     
     @StateObject private var routeViewModel = RouteViewModel()
     @State private var position = MapCameraPosition.automatic
@@ -98,8 +98,8 @@ struct RouteView: View {
                     Spacer()
                     
                     VStack(alignment: .trailing, spacing: 4) {
-                        if genre != "Any" {
-                            Text(genre)
+                        if genres != "Any" {
+                            Text(genres)
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
@@ -107,8 +107,8 @@ struct RouteView: View {
                                 .cornerRadius(12)
                         }
                         
-                        if decade != "Any" {
-                            Text(decade)
+                        if decades != "Any" {
+                            Text(decades)
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
@@ -132,7 +132,7 @@ struct RouteView: View {
                 // Start Journey Button
                 Button(action: {
                     // TODO: Start navigation or music playback
-                    print("Starting journey with \(genre) from \(decade)")
+                    print("Starting journey with \(genres) from \(decades)")
                 }) {
                     HStack {
                         Image(systemName: "play.fill")
@@ -255,18 +255,46 @@ class RouteViewModel: ObservableObject {
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: startPlacemark)
         request.destination = MKMapItem(placemark: endPlacemark)
-        request.transportType = transportType == .driving ? .automobile : .transit
+        
+        // For transit, try walking first as MapKit transit is unreliable
+        // In a real app, you'd use a transit API like Google Directions or TfL
+        if transportType == .transit {
+            print("🚦 Transit requested - using walking as fallback (MapKit transit is limited)")
+            request.transportType = .walking
+        } else {
+            request.transportType = .automobile
+        }
+        
         request.requestsAlternateRoutes = false
+        
+        print("🚦 Requesting \(transportType.rawValue) route from \(start) to \(end)")
         
         let directions = MKDirections(request: request)
         directions.calculate { [weak self] response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 
+                if let error = error {
+                    let nsError = error as NSError
+                    print("❌ Route error: \(error.localizedDescription)")
+                    print("   Domain: \(nsError.domain), Code: \(nsError.code)")
+                    print("   UserInfo: \(nsError.userInfo)")
+                }
+                
                 if let route = response?.routes.first {
+                    print("✅ Route found: \(route.distance)m, \(route.expectedTravelTime)s")
                     self?.route = route
+                    
+                    // Show note if we used walking instead of transit
+                    if transportType == .transit {
+                        self?.errorMessage = "Note: Showing walking route (MapKit transit API is limited). Use for approximate distance/time."
+                    }
+                } else if let routes = response?.routes {
+                    print("⚠️ Got response but no routes. Total routes: \(routes.count)")
+                    self?.errorMessage = "No \(transportType.rawValue.lowercased()) route available for this location"
                 } else {
-                    self?.errorMessage = error?.localizedDescription ?? "No route found"
+                    print("❌ No response received")
+                    self?.errorMessage = error?.localizedDescription ?? "No route found. Try a different transport type."
                 }
             }
         }
@@ -279,8 +307,8 @@ class RouteViewModel: ObservableObject {
             startLocation: "123 Main St",
             endLocation: "456 Oak Ave",
             transportType: .driving,
-            genre: "Rock",
-            decade: "1980s"
+            genres: "Rock",
+            decades: "1980s"
         )
     }
 }

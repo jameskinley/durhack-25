@@ -13,8 +13,8 @@ struct RouteOptionsView: View {
     let endLocation: String
     
     @State private var selectedTransport: TransportType = .driving
-    @State private var selectedGenre: String = "Any"
-    @State private var selectedDecade: String = "Any"
+    @State private var selectedGenres: Set<String> = ["Any"]
+    @State private var selectedDecades: Set<String> = ["Any"]
     
     enum TransportType: String, CaseIterable {
         case driving = "Driving"
@@ -30,6 +30,20 @@ struct RouteOptionsView: View {
     
     let genres = ["Any", "Rock", "Pop", "Jazz", "Hip Hop", "Electronic", "Country", "R&B", "Classical", "Alternative"]
     let decades = ["Any", "1950s", "1960s", "1970s", "1980s", "1990s", "2000s", "2010s", "2020s"]
+    
+    var genreList: String {
+        if selectedGenres.contains("Any") || selectedGenres.isEmpty {
+            return "Any"
+        }
+        return Array(selectedGenres).sorted().joined(separator: ", ")
+    }
+    
+    var decadeList: String {
+        if selectedDecades.contains("Any") || selectedDecades.isEmpty {
+            return "Any"
+        }
+        return Array(selectedDecades).sorted().joined(separator: ", ")
+    }
     
     var body: some View {
         ScrollView {
@@ -67,60 +81,58 @@ struct RouteOptionsView: View {
                     Text("Music Genre")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .padding(.horizontal, 20)
                     
                     FlowLayout(spacing: 12) {
                         ForEach(genres, id: \.self) { genre in
                             Button(action: {
-                                selectedGenre = genre
+                                toggleGenreSelection(genre)
                             }) {
                                 Text(genre)
                                     .font(.body)
                                     .fontWeight(.medium)
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 12)
-                                    .background(selectedGenre == genre ? Color.blue : Color.gray.opacity(0.2))
-                                    .foregroundColor(selectedGenre == genre ? .white : .primary)
+                                    .background(selectedGenres.contains(genre) ? Color.blue : Color.gray.opacity(0.2))
+                                    .foregroundColor(selectedGenres.contains(genre) ? .white : .primary)
                                     .cornerRadius(20)
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
                 }
+                .padding(.horizontal, 20)
                 
                 // Decade Selection
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Time Period")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .padding(.horizontal, 20)
                     
                     FlowLayout(spacing: 12) {
                         ForEach(decades, id: \.self) { decade in
                             Button(action: {
-                                selectedDecade = decade
+                                toggleDecadeSelection(decade)
                             }) {
                                 Text(decade)
                                     .font(.body)
                                     .fontWeight(.medium)
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 12)
-                                    .background(selectedDecade == decade ? Color.blue : Color.gray.opacity(0.2))
-                                    .foregroundColor(selectedDecade == decade ? .white : .primary)
+                                    .background(selectedDecades.contains(decade) ? Color.blue : Color.gray.opacity(0.2))
+                                    .foregroundColor(selectedDecades.contains(decade) ? .white : .primary)
                                     .cornerRadius(20)
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
                 }
+                .padding(.horizontal, 20)
                 
                 // Continue Button
                 NavigationLink(destination: RouteView(
                     startLocation: startLocation,
                     endLocation: endLocation,
                     transportType: selectedTransport,
-                    genre: selectedGenre,
-                    decade: selectedDecade
+                    genres: genreList,
+                    decades: decadeList
                 )) {
                     Text("Show Route")
                         .font(.headline)
@@ -143,6 +155,46 @@ struct RouteOptionsView: View {
         }
         .navigationTitle("Route Options")
         .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private func toggleGenreSelection(_ genre: String) {
+        if genre == "Any" {
+            // If "Any" is selected, clear all and select "Any"
+            selectedGenres = ["Any"]
+        } else {
+            // Remove "Any" if selecting a specific genre
+            selectedGenres.remove("Any")
+            
+            if selectedGenres.contains(genre) {
+                selectedGenres.remove(genre)
+                // If nothing selected, default to "Any"
+                if selectedGenres.isEmpty {
+                    selectedGenres = ["Any"]
+                }
+            } else {
+                selectedGenres.insert(genre)
+            }
+        }
+    }
+    
+    private func toggleDecadeSelection(_ decade: String) {
+        if decade == "Any" {
+            // If "Any" is selected, clear all and select "Any"
+            selectedDecades = ["Any"]
+        } else {
+            // Remove "Any" if selecting a specific decade
+            selectedDecades.remove("Any")
+            
+            if selectedDecades.contains(decade) {
+                selectedDecades.remove(decade)
+                // If nothing selected, default to "Any"
+                if selectedDecades.isEmpty {
+                    selectedDecades = ["Any"]
+                }
+            } else {
+                selectedDecades.insert(decade)
+            }
+        }
     }
 }
 
