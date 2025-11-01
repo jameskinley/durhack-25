@@ -1,5 +1,5 @@
 //
-//  MapView.swift
+//  EndPointView.swift
 //  GeoGroove
 //
 //  Created by Alex on 01/11/2025.
@@ -8,12 +8,13 @@
 import SwiftUI
 import MapKit
 
-struct MapView: View {
+struct EndPointView: View {
+    
+    let startLocation: String
     
     @StateObject private var locationManager = LocationManager()
     @StateObject private var addressSearch = AddressSearchViewModel()
     @State private var position = MapCameraPosition.automatic
-    @State private var endPoint: String = ""
     @State private var showingSuggestions = false
     
     var body: some View {
@@ -29,8 +30,8 @@ struct MapView: View {
             
             VStack(spacing: 0) {
                 HStack {
-                    Image(systemName: "location")
-                    TextField("Start Point", text: $addressSearch.searchQuery)
+                    Image(systemName: "flag.fill")
+                    TextField("End Point", text: $addressSearch.searchQuery)
                         .autocorrectionDisabled()
                         .padding()
                         .background(Color.white)
@@ -44,11 +45,14 @@ struct MapView: View {
                             showingSuggestions = !newValue.isEmpty
                         }
                     
-                    NavigationLink(destination: EndPointView(startLocation: addressSearch.searchQuery)) {
-                        Image(systemName: "arrow.right")
+                    Button(action: {
+                        // TODO: Navigate to route planning or confirmation
+                        print("Start: \(startLocation), End: \(addressSearch.searchQuery)")
+                    }) {
+                        Image(systemName: "checkmark")
                             .foregroundColor(.white)
                             .frame(width: 44, height: 44)
-                            .background(Color.blue)
+                            .background(Color.green)
                             .clipShape(Circle())
                     }
                 }
@@ -70,65 +74,27 @@ struct MapView: View {
                                             .foregroundColor(.secondary)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 16)
-                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 20)
                                 }
                                 Divider()
-                                    .padding(.horizontal, 24)
                             }
                         }
-                        .padding(.vertical, 8)
                     }
                     .frame(maxHeight: 200)
                     .background(Color.white)
                     .cornerRadius(10)
                     .shadow(radius: 2)
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
                 }
-                
-                // OR divider and Use Current Location button
-                VStack(spacing: 12) {
-                    HStack {
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
-                        Text("OR")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 8)
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    NavigationLink(destination: EndPointView(startLocation: "Current Location")) {
-                        HStack {
-                            Image(systemName: "location.fill")
-                            Text("Use Current Location")
-                                .fontWeight(.medium)
-                        }
-                        .foregroundColor(.blue)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(20)
-                    }
-                    .padding(.horizontal, 20)
-                    .simultaneousGesture(TapGesture().onEnded {
-                        useCurrentLocation()
-                    })
-                }
-                .padding(.bottom, 12)
             }
             .presentationDetents([.height(200), .large])
             .presentationBackground(.regularMaterial)
             .presentationBackgroundInteraction(.enabled(upThrough: .large))
+            .padding(.bottom, 20)
         }
-        
-        .navigationTitle(Text("Start"))
-
+        .navigationTitle("End")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             locationManager.requestAuthorization()
         }
@@ -153,31 +119,6 @@ struct MapView: View {
         position = .region(region)
     }
     
-    private func useCurrentLocation() {
-        guard let userLocation = locationManager.lastLocation else {
-            print("User location not available")
-            return
-        }
-        
-        // Use reverse geocoding to get address from coordinates
-        let geocoder = CLGeocoder()
-        let location = CLLocation(latitude: userLocation.coordinate.latitude, longitude: userLocation.coordinate.longitude)
-        
-        geocoder.reverseGeocodeLocation(location) { placemarks, error in
-            if let placemark = placemarks?.first {
-                let address = [placemark.thoroughfare, placemark.locality, placemark.administrativeArea]
-                    .compactMap { $0 }
-                    .joined(separator: ", ")
-                addressSearch.searchQuery = address.isEmpty ? "Current Location" : address
-            } else {
-                addressSearch.searchQuery = "Current Location"
-            }
-            showingSuggestions = false
-        }
-        
-        centerOnUser()
-    }
-    
     private func selectAddress(_ completion: MKLocalSearchCompletion) {
         addressSearch.selectLocation(completion) { coordinate in
             if let coordinate = coordinate {
@@ -199,6 +140,6 @@ struct MapView: View {
 
 #Preview {
     NavigationStack {
-        MapView()
+        EndPointView(startLocation: "123 Main St")
     }
 }
