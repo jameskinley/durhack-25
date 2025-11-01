@@ -1,20 +1,20 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
+// Keep local editors happy; Deno provides this at runtime on Supabase Edge
+declare const Deno: { env: { get: (key: string) => string | undefined } };
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE')!;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-  console.error('[create-user/lib] Missing required env vars', {
-    hasUrl: Boolean(SUPABASE_URL),
-    hasServiceRole: Boolean(SUPABASE_SERVICE_ROLE)
-  });
-}
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
-  auth: {
-    persistSession: false
+function getClient(): SupabaseClient {
+  const url = Deno.env.get('SUPABASE_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE');
+  if (!url || !serviceKey) {
+    console.error('[create-user/lib] Missing required env vars', {
+      hasUrl: Boolean(url),
+      hasServiceRole: Boolean(serviceKey)
+    });
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
   }
-});
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
+}
 
 // Table names (adjust to your schema if different)
 const USERS_TABLE = 'users';
@@ -46,6 +46,7 @@ type TrackRow = {
  */
 async function calculateCandidateTracks(userId: string): Promise<boolean> {
   // 1) Load user preferences
+  const supabase = getClient();
   const { data: user, error: userErr } = await supabase
     .from(USERS_TABLE)
     .select('id, preferences')
@@ -143,8 +144,9 @@ async function calculateCandidateTracks(userId: string): Promise<boolean> {
  * @returns 
  */
 export async function createUser(name: string, preferences: string[]): Promise<boolean> {
-    // 1) Create the user with supplied preferences
-    const { data: inserted, error } = await supabase
+  const supabase = getClient();
+  // 1) Create the user with supplied preferences
+  const { data: inserted, error } = await supabase
       .from(USERS_TABLE)
       .insert([{ name, preferences }])
       .select('id')

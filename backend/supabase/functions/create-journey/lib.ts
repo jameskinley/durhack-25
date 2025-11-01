@@ -1,23 +1,22 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
 
 // Keep local editors happy; Deno provides this at runtime on Supabase Edge
 declare const Deno: { env: { get: (key: string) => string | undefined } };
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE')!;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-  console.error('[create-journey/lib] Missing required env vars', {
-    hasUrl: Boolean(SUPABASE_URL),
-    hasServiceRole: Boolean(SUPABASE_SERVICE_ROLE)
-  });
+function getClient(): SupabaseClient {
+    const url = Deno.env.get('SUPABASE_URL');
+    // Support either SUPABASE_SERVICE_ROLE (recommended) or SUPABASE_SERVICE_ROLE_KEY
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !serviceKey) {
+        console.error('[create-journey/lib] Missing required env vars', {
+            hasUrl: Boolean(url),
+            hasServiceRole: Boolean(serviceKey)
+        });
+        throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+    }
+    return createClient(url, serviceKey, { auth: { persistSession: false } });
 }
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
-  auth: {
-    persistSession: false
-  }
-});
 
 // Table names (adjust to your schema if different)
 const JOURNEYS_TABLE = 'journeys';
@@ -31,115 +30,83 @@ const MAX_CANDIDATES = Number(Deno.env.get('MAX_CANDIDATES') ?? 200); // cap for
 type UUID = string;
 
 type JourneyRow = {
-  id: UUID;
-  preferences: string[];
+    journey_id: UUID;
+    preferences: string[];
 };
 
 type TrackRow = {
-  id: UUID;
-  title?: string;
-  tags: string[];
+    track_id: UUID;
+    title?: string;
+    tags: string[];
 };
 
 /**
  * Calculates candidate tracks for a journey.
  */
 async function calculateCandidateTracksForJourney(journeyId: string): Promise<boolean> {
-  // 1) Load journey preferences
-  const { data: journey, error: journeyErr } = await supabase
-    .from(JOURNEYS_TABLE)
-    .select('id, preferences')
-    .eq('id', journeyId)
-    .single<JourneyRow>();
-
-  if (journeyErr) {
-    console.error('[calculateCandidateTracksForJourney] Failed to fetch journey', journeyErr);
+  const supabase = getClient();
+  if (!journeyId) {
+    console.error('[calculateCandidateTracksForJourney] missing journeyId');
     return false;
   }
 
-  const preferences = (journey?.preferences ?? []).filter(Boolean);
-  if (preferences.length === 0) return true;
-
-  // 2) Fetch candidate tracks. Consider pre-filtering via SQL with GIN index in production.
-  const { data: tracks, error: tracksErr } = await supabase
-    .from(TRACKS_TABLE)
-    .select('id, tags');
-
-  if (tracksErr) {
-    console.error('[calculateCandidateTracksForJourney] Failed to fetch tracks', tracksErr);
-    return false;
-  }
-
-  const prefSet: Set<string> = new Set<string>(preferences);
-
-  const symmDiffSize = (a: Set<string>, b: Set<string>): number => {
-    let inter = 0;
-    for (const t of a) if (b.has(t)) inter++;
-    return a.size + b.size - 2 * inter;
+  const params = {
+    p_journey_id: journeyId
   };
 
-  const intersectionSize = (a: Set<string>, b: Set<string>): number => {
-    let inter = 0;
-    for (const t of a) if (b.has(t)) inter++;
-    return inter;
-  };
+  const { data, error } = await supabase
+    .rpc('calculate_candidate_tracks', params);
 
-  type Scored = { trackId: UUID; diff: number; inter: number; size: number };
-  const trackRows: TrackRow[] = ((tracks ?? []) as unknown as TrackRow[]);
-
-  const scored: Scored[] = trackRows
-    .filter((tr: TrackRow) => Array.isArray(tr.tags))
-    .map((tr: TrackRow) => {
-      const tagSet: Set<string> = new Set<string>(tr.tags);
-      const diff = symmDiffSize(prefSet, tagSet);
-      const inter = intersectionSize(prefSet, tagSet);
-      return { trackId: tr.id, diff, inter, size: tagSet.size } as Scored;
-    })
-    .filter((x: Scored) => x.diff <= MAX_SYMM_DIFF)
-    .sort((a: Scored, b: Scored) =>
-      (a.diff - b.diff)
-      || (b.inter - a.inter)
-      || (a.size - b.size)
-      || a.trackId.localeCompare(b.trackId)
-    )
-    .slice(0, MAX_CANDIDATES);
-
-  if (scored.length === 0) return true;
-
-  const payload = scored.map((s: Scored, idx: number) => ({
-    journey_id: journeyId,
-    track_id: s.trackId,
-    rank: idx + 1,
-    score: (MAX_SYMM_DIFF - s.diff) * 100 + s.inter * 10 - s.size,
-  }));
-
-  const { error: upsertErr } = await supabase
-    .from(JOURNEY_CANDIDATE_TRACKS_TABLE)
-    .upsert(payload, { onConflict: 'journey_id,track_id' });
-
-  if (upsertErr) {
-    console.error('[calculateCandidateTracksForJourney] Failed to upsert candidates', upsertErr);
+  if (error) {
+    console.error('[calculateCandidateTracksForJourney] RPC error:', error);
     return false;
   }
 
-  return true;
+  // Normalize result shapes from Supabase
+  let result: any = data;
+  if (Array.isArray(result) && result.length) result = result[0];
+
+  // Some Supabase versions wrap jsonb returns as { "<fn_name>": <json> }
+  if (result && typeof result === 'object' && Object.keys(result).length === 1) {
+    const onlyKey = Object.keys(result)[0];
+    const candidate = (result as any)[onlyKey];
+    if (candidate && typeof candidate === 'object') result = candidate;
+  }
+
+  // If it's a JSON string, try parse
+  if (typeof result === 'string') {
+    try { result = JSON.parse(result); } catch (e) { /* ignore */ }
+  }
+
+  console.debug('[calculateCandidateTracksForJourney] rpc result:', result);
+
+  // Interpret success
+  if (result === true || result === 't') return true;
+  if (result && typeof result === 'object' && result.success === true) return true;
+
+  console.error('[calculateCandidateTracksForJourney] RPC reported failure:', result);
+  return false;
 }
+
 
 /**
  * Creates a new journey and calculates its candidate tracks.
  */
-export async function createJourney(preferences: string[]): Promise<boolean> {
-  const { data: inserted, error } = await supabase
-    .from(JOURNEYS_TABLE)
-    .insert([{ preferences }])
-    .select('id')
-    .single<JourneyRow>();
+export async function createJourney(preferences: string[]): Promise<{ ok: boolean; id?: string }> {
+    const supabase = getClient();
+    const { data: inserted, error } = await supabase
+        .from(JOURNEYS_TABLE)
+        .insert([{ preferences }])
+        .select('journey_id')
+        .single<JourneyRow>();
 
-  if (error || !inserted?.id) {
-    console.error('[createJourney] Failed to create journey', error);
-    return false;
-  }
+    console.log("inserted:", inserted);
 
-  const ok = await calculateCandidateTracksForJourney(inserted.id);
-  return ok;
+    if (error || !inserted?.journey_id) {
+        console.error('[createJourney] Failed to create journey', error);
+        return { ok: false };
+    }
+
+    const ok = await calculateCandidateTracksForJourney(inserted.journey_id);
+    return { ok, id: inserted.journey_id };
 }

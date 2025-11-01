@@ -1,12 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { CuratePlaylistRequest } from "../_shared/structs.ts";
-import { getUserModel, curatePlaylist } from "./lib.ts";
+import { curatePlaylist } from "./lib.ts";
 import handleCorsPreflight from "../_shared/cors.ts";
 
 console.info('server started');
 
 Deno.serve(async (req: Request) => {
-  const { userId, points, duration }: CuratePlaylistRequest = await req.json();
+  const { journeyId, points, duration }: CuratePlaylistRequest = await req.json();
 
   if(req.method === 'OPTIONS') {
     return handleCorsPreflight(req) as Response;
@@ -16,9 +16,7 @@ Deno.serve(async (req: Request) => {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
-  const userModel = getUserModel(userId);
-
-  const playlist = curatePlaylist(userModel, points, duration);
+  const playlist = curatePlaylist(journeyId, points, duration);
 
   return new Response(
     JSON.stringify(playlist),

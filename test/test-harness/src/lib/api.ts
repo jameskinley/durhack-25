@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 
 export type GetUserResponse = { id?: string; message?: string };
 export type GetTagsResponse = { tags: string[] };
+export type PlaylistTrack = { track: string; artist: string; type: 'track' | 'bio' };
 
 export async function getUserByName(name: string): Promise<GetUserResponse> {
   // Use POST body for portability across gateways
@@ -12,12 +13,13 @@ export async function getUserByName(name: string): Promise<GetUserResponse> {
   return (post.data as GetUserResponse) ?? {};
 }
 
-export async function createJourney(name: string, preferences: string[]): Promise<{ ok: boolean }> {
+export async function createJourney(name: string, preferences: string[]): Promise<{ ok: boolean; id?: string }> {
   const resp = await supabase.functions.invoke('create-journey', {
     body: { name, preferences }
   });
   if (resp.error) throw resp.error;
-  return { ok: true };
+  const data = resp.data as { ok?: boolean; id?: string } | undefined;
+  return { ok: Boolean(data?.ok ?? true), id: data?.id };
 }
 
 // Backward-compat alias (optional):
@@ -33,4 +35,17 @@ export async function getAllTags(): Promise<string[]> {
     // ignore and fall back
   }
   return ['rock', 'pop', 'reggae', '60s', 'upbeat', 'jazz', 'electronic', 'indie'];
+}
+
+export async function curatePlaylist(params: {
+  journeyId: string;
+  points: { x: number; y: number }[];
+  durationSeconds: number;
+}): Promise<PlaylistTrack[]> {
+  const { journeyId, points, durationSeconds } = params;
+  const resp = await supabase.functions.invoke('curate-playlist', {
+    body: { userId: journeyId, points, duration: durationSeconds }
+  });
+  if (resp.error) throw resp.error;
+  return (resp.data as PlaylistTrack[]) ?? [];
 }

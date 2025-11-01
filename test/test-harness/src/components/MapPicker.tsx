@@ -3,6 +3,7 @@ import L from 'leaflet';
 import type { LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo, useState } from 'react';
+import { curatePlaylist, type PlaylistTrack } from '../lib/api';
 
 // Fix default marker icons for Leaflet with Vite
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -31,7 +32,7 @@ function MapRefSetter({ onReady }: { onReady: (m: L.Map) => void }) {
   return null;
 }
 
-export default function MapPicker() {
+export default function MapPicker({ journeyId }: { journeyId?: string | null }) {
   const [a, setA] = useState<LatLng | null>(null);
   const [b, setB] = useState<LatLng | null>(null);
   const [addrA, setAddrA] = useState<string>('');
@@ -39,6 +40,9 @@ export default function MapPicker() {
   const [status, setStatus] = useState<string>('');
   const [map, setMap] = useState<L.Map | null>(null);
   const [route, setRoute] = useState<LatLngExpression[] | null>(null);
+  const [durationMin, setDurationMin] = useState<number>(20);
+  const [curating, setCurating] = useState<boolean>(false);
+  const [playlist, setPlaylist] = useState<PlaylistTrack[] | null>(null);
   const center: LatLngExpression = useMemo(() => [51.505, -0.09], []);
 
   function onMapClick(latlng: LatLng) {
@@ -126,6 +130,39 @@ export default function MapPicker() {
     return () => { cancelled = true; };
   }, [a, b, map]);
 
+  function toPoints(): { x: number; y: number }[] {
+    if (route && Array.isArray(route) && route.length > 1) {
+      const pts = (route as [number, number][]);
+      const maxPts = 200;
+      const step = Math.max(1, Math.ceil(pts.length / maxPts));
+      const sampled: [number, number][] = [];
+      for (let i = 0; i < pts.length; i += step) sampled.push(pts[i]);
+      const last = pts[pts.length - 1];
+      if (sampled.length === 0 || sampled[sampled.length - 1] !== last) sampled.push(last);
+      return sampled.map(([lat, lon]) => ({ x: lon, y: lat }));
+    }
+    if (a && b) return [ { x: a.lng, y: a.lat }, { x: b.lng, y: b.lat } ];
+    return [];
+  }
+
+  async function onCurate() {
+    setStatus('');
+    setPlaylist(null);
+    if (!journeyId) { setStatus('Create a journey first'); return; }
+    const pts = toPoints();
+    if (pts.length < 2) { setStatus('Pick two locations or build a route first'); return; }
+    setCurating(true);
+    try {
+      const pl = await curatePlaylist({ journeyId, points: pts, durationSeconds: Math.max(60, Math.round(durationMin * 60)) });
+      setPlaylist(pl);
+    } catch (e) {
+      console.error('curate failed', e);
+      setStatus('Failed to curate playlist');
+    } finally {
+      setCurating(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -181,6 +218,35 @@ export default function MapPicker() {
         <div className="text-sm text-gray-600">
           {a && <div>A: {a.lat.toFixed(5)}, {a.lng.toFixed(5)}</div>}
           {b && <div>B: {b.lat.toFixed(5)}, {b.lng.toFixed(5)}</div>}
+        </div>
+      )}
+
+      <div className="flex items-end gap-3">
+        <div>
+          <label className="text-xs text-gray-500">Planned duration (minutes)</label>
+          <input type="number" min={1} className="mt-1 h-10 w-32 rounded-lg border px-3" value={durationMin} onChange={e => setDurationMin(Number(e.target.value))} />
+        </div>
+        <button onClick={onCurate} disabled={curating || !journeyId} className="h-10 px-4 rounded-lg bg-gray-900 text-white disabled:opacity-50">
+          {curating ? 'Generating…' : 'Generate playlist'}
+        </button>
+      </div>
+
+      {playlist && (
+        <div className="mt-4">
+          <h3 className="text-sm font-medium mb-2">Playlist</h3>
+          <ul className="divide-y border rounded-lg">
+            {playlist.map((p, idx) => (
+              <li key={idx} className="p-3 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{p.track}</div>
+                  <div className="text-xs text-gray-500">{p.artist}</div>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full border ${p.type === 'bio' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                  {p.type === 'bio' ? 'Artist bio' : 'Track'}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

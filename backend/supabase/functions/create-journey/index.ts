@@ -20,8 +20,8 @@ Deno.serve(async (req: Request) => {
     if (!name || !Array.isArray(preferences)) {
       return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400 });
     }
-    const ok = await createJourney(preferences);
-    return new Response(JSON.stringify({ ok }), {
+    const result = await createJourney(preferences);
+    return new Response(JSON.stringify({ ok: result.ok, id: result.id }), {
       headers: { 'Content-Type': 'application/json', 'Connection': 'keep-alive' }
     });
   } catch (e) {

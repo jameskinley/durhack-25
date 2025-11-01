@@ -4,7 +4,7 @@ export interface Point {
 }
 
 export interface CuratePlaylistRequest {
-    userId: string;
+    journeyId: string;
     points: Point[]; //ordered xy track (longitude, latitude)
     duration: number; //seconds
 }

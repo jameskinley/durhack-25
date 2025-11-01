@@ -1,15 +1,21 @@
-import { Point, UserModel, Track, Artist, PlaylistTrack } from "../_shared/structs.ts";
+import { Point, Track, Artist, PlaylistTrack } from "../_shared/structs.ts";
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
 
-export function getUserModel(userId: string): UserModel {
-    // Minimal placeholder that satisfies typing and avoids runtime crashes.
-    return {
-        id: userId,
-        name: "John Doe",
-        preferences: ["rock", "pop"],
-        artistPool: [],
-        candidateTracks: []
-    };
+function getClient(): SupabaseClient {
+    const url = Deno.env.get('SUPABASE_URL');
+    // Support either SUPABASE_SERVICE_ROLE (recommended) or SUPABASE_SERVICE_ROLE_KEY
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !serviceKey) {
+        console.error('[create-journey/lib] Missing required env vars', {
+            hasUrl: Boolean(url),
+            hasServiceRole: Boolean(serviceKey)
+        });
+        throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+    }
+    return createClient(url, serviceKey, { auth: { persistSession: false } });
 }
+
+const supabase = getClient();
 
 function haversineDistance(pointA: Point, pointB: Point): number {
     const R = 6371; // Radius of the Earth in kilometers
@@ -21,7 +27,7 @@ function haversineDistance(pointA: Point, pointB: Point): number {
     return R * c; // Distance in kilometers
 }
 
-const scoreDistance = (x: number, maxRadiusKm: number = 50): number => 1 / (1 + Math.exp(x-((maxRadiusKm / 200.0) * 5)));
+const scoreDistance = (x: number, maxRadiusKm: number = 50): number => 1 / (1 + Math.exp(x - ((maxRadiusKm / 200.0) * 5)));
 
 function scoreRecording(
     track: Track,
@@ -41,10 +47,11 @@ function scoreRecording(
     return distanceScore + (tagIntersection * 10);
 }
 
-export function curatePlaylist(userModel: UserModel, points: Point[], duration: number): PlaylistTrack[] {
-    const preferences = userModel.preferences;
-    const artists = userModel.artistPool;
-    const tracks = userModel.candidateTracks;
+export function curatePlaylist(journeyId: string, points: Point[], duration: number): PlaylistTrack[] {
+
+    const candidateTracks = supabase.from('journey_candidate_tracks')
+        .select('track_id, title, duration, tags, artistId')
+        .eq('journey_id', journeyId);
 
     const artistIndex = new Map<string, Artist>();
     artists.forEach(a => artistIndex.set(a.id, a));
@@ -68,7 +75,7 @@ export function curatePlaylist(userModel: UserModel, points: Point[], duration: 
         let segAccum = 0;
         let i = 0;
 
-        while(segAccum < segments.duration && i < scored.length) {
+        while (segAccum < segments.duration && i < scored.length) {
             const track = scored[i++].track;
             const artist = artistIndex.get(track.artistId)!;
 
@@ -107,7 +114,7 @@ export function curatePlaylist(userModel: UserModel, points: Point[], duration: 
             segAccum += track.duration;
             total += track.duration;
 
-            if(total >= duration) return playlist;
+            if (total >= duration) return playlist;
         }
 
     }
