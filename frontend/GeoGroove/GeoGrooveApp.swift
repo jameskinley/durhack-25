@@ -11,7 +11,7 @@ import SwiftUI
 struct DurHack25App: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HomeView()
         }
     }
 }
