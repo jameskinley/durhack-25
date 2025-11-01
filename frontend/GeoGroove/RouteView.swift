@@ -19,6 +19,7 @@ struct RouteView: View {
     
     @StateObject private var routeViewModel = RouteViewModel()
     @State private var position = MapCameraPosition.automatic
+    @State private var showLoadingJourney = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -130,10 +131,15 @@ struct RouteView: View {
                 }
                 
                 // Start Journey Button
-                Button(action: {
-                    // TODO: Start navigation or music playback
-                    print("Starting journey with \(genres) from \(decades)")
-                }) {
+                NavigationLink(destination: LoadingJourneyView(
+                    startLocation: startLocation,
+                    endLocation: endLocation,
+                    startCoordinate: routeViewModel.startCoordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                    endCoordinate: routeViewModel.endCoordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                    transportType: transportType,
+                    genres: genres,
+                    decades: decades
+                )) {
                     HStack {
                         Image(systemName: "play.fill")
                         Text("Start Journey")
