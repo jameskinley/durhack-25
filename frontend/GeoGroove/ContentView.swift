@@ -7,7 +7,6 @@
 
 import SwiftUI
 import MapKit
-import Combine
 
 struct ContentView: View {
     
@@ -15,25 +14,17 @@ struct ContentView: View {
     @State private var position = MapCameraPosition.automatic
     @State private var startPoint: String = ""
     @State private var endPoint: String = ""
-    @State private var isSheetPresented: Bool = false
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 10){
+            VStack(spacing: 10) {
                 ZStack(alignment: .bottomTrailing) {
-                    Map(position: $position)
-                    Button {
-                        centerOnUser()
-                    } label: {
-                        Image(systemName: "location.fill")
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color.black)
-                            .clipShape(Circle())
-                            .shadow(radius: 4)
+                    Map(position: $position) {
+                        UserAnnotation()
                     }
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
+                    .mapControls {
+                        MapUserLocationButton()
+                    }
                 }
                 HStack {
                     Image(systemName: "location")
@@ -47,30 +38,30 @@ struct ContentView: View {
                             RoundedRectangle(cornerRadius: 20)
                                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                         )
-
                 }
                 .padding(20)
                 .presentationDetents([.height(200), .large])
                 .presentationBackground(.regularMaterial)
                 .presentationBackgroundInteraction(.enabled(upThrough: .large))
-                
             }
             .onAppear {
                 locationManager.requestAuthorization()
+            }
+            .onChange(of: locationManager.lastLocation) { oldValue, newValue in
+                if let location = newValue, oldValue == nil {
+                    centerOnUser()
+                }
             }
         }
     }
     
     private func centerOnUser() {
         guard let userLocation = locationManager.lastLocation else {
-            print("User location not available")
             return
         }
         
-        let userCoordinate = userLocation.coordinate
-        print(userCoordinate)
         let region = MKCoordinateRegion(
-            center: userCoordinate,
+            center: userLocation.coordinate,
             latitudinalMeters: 1000,
             longitudinalMeters: 1000
         )
