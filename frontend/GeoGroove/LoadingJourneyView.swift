@@ -130,32 +130,33 @@ struct LoadingJourneyView: View {
         // Simulate API call delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             
-            /* 
-            // TODO: Replace with actual API call
-            let apiURL = URL(string: "https://your-api.com/songs")!
-            var request = URLRequest(url: apiURL)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            /*
+            // API CALL 1: Get tracks list
+            let tracksURL = URL(string: "https://your-api.com/tracks")!
+            var tracksRequest = URLRequest(url: tracksURL)
+            tracksRequest.httpMethod = "POST"
+            tracksRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             
-            let body: [String: Any] = [
-                "start": startLocation,
-                "end": endLocation,
-                "transport": transportType.rawValue,
-                "genres": genres,
-                "decades": decades
+            let tracksBody: [String: Any] = [
+                "start": self.startLocation,
+                "end": self.endLocation,
+                "transport": self.transportType.rawValue,
+                "genres": self.genres,
+                "decades": self.decades
             ]
             
-            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            tracksRequest.httpBody = try? JSONSerialization.data(withJSONObject: tracksBody)
             
-            URLSession.shared.dataTask(with: request) { data, response, error in
+            URLSession.shared.dataTask(with: tracksRequest) { data, response, error in
                 if let data = data {
-                    // Parse response
                     let decoder = JSONDecoder()
-                    if let songResponse = try? decoder.decode([Song].self, from: data) {
-                        DispatchQueue.main.async {
-                            self.songs = songResponse
-                            self.showSongs = true
-                        }
+                    if let tracksResponse = try? decoder.decode([TrackResponse].self, from: data) {
+                        // Filter out non-track types
+                        let validTracks = tracksResponse.filter { $0.type == "track" }
+                        print("🎵 Received \(tracksResponse.count) items, \(validTracks.count) are tracks")
+                        
+                        // For each track, make two more API calls
+                        self.enrichTracksWithMetadata(validTracks)
                     }
                 }
             }.resume()
@@ -171,85 +172,190 @@ struct LoadingJourneyView: View {
         }
     }
     
+    /*
+    private func enrichTracksWithMetadata(_ tracks: [TrackResponse]) {
+        var enrichedSongs: [Song] = []
+        let group = DispatchGroup()
+        
+        for (index, track) in tracks.enumerated() {
+            group.enter()
+            
+            // API CALL 2: Get art image and song ID
+            let artURL = URL(string: "https://your-api.com/track/\(track.track)/art")!
+            var artRequest = URLRequest(url: artURL)
+            artRequest.httpMethod = "GET"
+            
+            var artImageUrl = ""
+            var songId = ""
+            
+            URLSession.shared.dataTask(with: artRequest) { data, response, error in
+                if let data = data {
+                    let decoder = JSONDecoder()
+                    if let artResponse = try? decoder.decode(ArtResponse.self, from: data) {
+                        artImageUrl = artResponse.imageUrl
+                        songId = artResponse.songId
+                    }
+                }
+                
+                // API CALL 3: Get bio/comment
+                let bioURL = URL(string: "https://your-api.com/track/\(track.track)/bio")!
+                var bioRequest = URLRequest(url: bioURL)
+                bioRequest.httpMethod = "GET"
+                
+                var bio = ""
+                
+                URLSession.shared.dataTask(with: bioRequest) { data, response, error in
+                    if let data = data {
+                        let decoder = JSONDecoder()
+                        if let bioResponse = try? decoder.decode(BioResponse.self, from: data) {
+                            bio = bioResponse.bio
+                        }
+                    }
+                    
+                    // Create Song object with all collected data
+                    let song = Song(
+                        id: songId.isEmpty ? String(index) : songId,
+                        name: track.track,
+                        artist: track.artist,
+                        location: self.formatLocation(track.location),
+                        bio: bio.isEmpty ? track.comment ?? "" : bio,
+                        latitude: track.location.lat,
+                        longitude: track.location.lon,
+                        artImageUrl: artImageUrl,
+                        songId: songId
+                    )
+                    
+                    DispatchQueue.main.async {
+                        enrichedSongs.append(song)
+                    }
+                    
+                    group.leave()
+                }.resume()
+            }.resume()
+        }
+        
+        group.notify(queue: .main) {
+            print("🎵 Enriched \(enrichedSongs.count) tracks with metadata")
+            self.songs = enrichedSongs.sorted { tracksResponse[$0].startIndex < tracksResponse[$1].startIndex }
+            self.showSongs = true
+        }
+    }
+    
+    private func formatLocation(_ location: TrackResponse.LocationData) -> String {
+        return "Lat: \(location.lat), Lon: \(location.lon)"
+    }
+    */
+    
     private func generateDummySongs() -> [Song] {
         return [
             Song(
-                id: "1",
+                id: "queen_001",
                 name: "Bohemian Rhapsody",
                 artist: "Queen",
                 location: "Baker Street, London, UK",
                 bio: "\"This iconic six-minute opus was recorded at various studios across London in 1975. The operatic section features multi-tracked harmonies that took weeks to perfect. Freddie Mercury's vision for this genre-defying masterpiece changed rock music forever. Legend has it that the band recorded over 180 vocal overdubs, pushing the studio's 24-track tape machines to their absolute limits.\"",
                 latitude: 51.5237,
-                longitude: -0.1585
+                longitude: -0.1585,
+                artImageUrl: "https://example.com/queen_bohemian.jpg",
+                songId: "queen_001"
             ),
             Song(
-                id: "2",
+                id: "kinks_001",
                 name: "Waterloo Sunset",
                 artist: "The Kinks",
                 location: "Waterloo Bridge, London",
                 bio: "\"Ray Davies penned this melancholic love letter to London while recovering from illness in 1966. The song captures the bittersweet beauty of watching lovers meet at Waterloo Station as the sun sets over the Thames. Davies has called it his favourite Kinks composition, describing it as 'the most beautiful song in the English language.'\"",
                 latitude: 51.5081,
-                longitude: -0.1169
+                longitude: -0.1169,
+                artImageUrl: "https://example.com/kinks_waterloo.jpg",
+                songId: "kinks_001"
             ),
             Song(
-                id: "3",
+                id: "clash_001",
                 name: "London Calling",
                 artist: "The Clash",
                 location: "Westminster, London",
                 bio: "\"The title track from The Clash's groundbreaking 1979 double album addressed social upheaval, nuclear anxiety, and cultural decay. Joe Strummer's urgent vocals and Mick Jones's driving guitar created a punk anthem that transcended the genre. The song's apocalyptic imagery reflected the band's view of London in the late 1970s, yet remains timelessly relevant.\"",
                 latitude: 51.5007,
-                longitude: -0.1246
+                longitude: -0.1246,
+                artImageUrl: "https://example.com/clash_london.jpg",
+                songId: "clash_001"
             ),
             Song(
-                id: "4",
+                id: "beatles_001",
                 name: "A Day in the Life",
                 artist: "The Beatles",
                 location: "Piccadilly Circus, London",
                 bio: "\"This psychedelic masterpiece closed Sgt. Pepper's Lonely Hearts Club Band with an orchestral crescendo that redefined pop music's possibilities. Lennon and McCartney's contrasting sections merged seamlessly, while the famous orchestral build-up required a 40-piece orchestra. Producer George Martin later called it 'the most ambitious and innovative recording The Beatles ever made.'\"",
                 latitude: 51.5099,
-                longitude: -0.1342
+                longitude: -0.1342,
+                artImageUrl: "https://example.com/beatles_day.jpg",
+                songId: "beatles_001"
             ),
             Song(
-                id: "5",
+                id: "blur_001",
                 name: "Parklife",
                 artist: "Blur",
                 location: "Hyde Park, London",
                 bio: "\"Damon Albarn's witty observation of British leisure culture became the anthem of 1990s Britpop. Actor Phil Daniels's cockney narration added authentic London flavour to this celebration of everyday moments. The song perfectly captured the zeitgeist of mid-90s Britain, when the nation briefly fell in love with itself again through music, fashion, and cultural pride.\"",
                 latitude: 51.5074,
-                longitude: -0.1657
+                longitude: -0.1657,
+                artImageUrl: "https://example.com/blur_parklife.jpg",
+                songId: "blur_001"
             ),
             Song(
-                id: "6",
+                id: "pulp_001",
                 name: "Common People",
                 artist: "Pulp",
                 location: "Ladbroke Grove, London",
                 bio: "\"Jarvis Cocker's scathing critique of class tourism in Britain struck a chord with millions in 1995. The song tells the true story of a Greek art student he met at Central Saint Martins who wanted to 'live like common people.' Its razor-sharp social commentary and anthemic chorus made it one of the defining songs of the Britpop era.\"",
                 latitude: 51.5171,
-                longitude: -0.2068
+                longitude: -0.2068,
+                artImageUrl: "https://example.com/pulp_common.jpg",
+                songId: "pulp_001"
             ),
             Song(
-                id: "7",
+                id: "turner_001",
                 name: "River Deep Mountain High",
                 artist: "Ike & Tina Turner",
                 location: "Southbank, London",
                 bio: "\"Phil Spector's 'Wall of Sound' production reached its zenith with this 1966 recording, which he called his greatest achievement. Tina Turner's powerhouse vocals soared over layers of orchestration in what Spector considered his magnum opus. Though initially overlooked in America, British audiences embraced it, launching the Turners to international stardom from their London performances.\"",
                 latitude: 51.5076,
-                longitude: -0.0994
+                longitude: -0.0994,
+                artImageUrl: "https://example.com/turner_river.jpg",
+                songId: "turner_001"
             ),
             Song(
-                id: "8",
+                id: "pistols_001",
                 name: "God Save the Queen",
                 artist: "Sex Pistols",
                 location: "Camden Town, London",
                 bio: "\"Released during the Queen's Silver Jubilee in 1977, this controversial punk anthem challenged British patriotism and monarchy. The BBC banned it, yet it still reached number one despite being censored from official charts. Johnny Rotten's sneering delivery and the song's raw energy embodied punk's rejection of establishment values, forever changing British music culture.\"",
                 latitude: 51.5390,
-                longitude: -0.1426
+                longitude: -0.1426,
+                artImageUrl: "https://example.com/pistols_god.jpg",
+                songId: "pistols_001"
             )
         ]
     }
 }
 
-// Song data model
+// Temporary struct for API responses (not a Song yet)
+struct TrackResponse: Codable {
+    let track: String
+    let artist: String
+    let tags: [String]
+    let location: LocationData
+    let type: String
+    let comment: String?
+    
+    struct LocationData: Codable {
+        let lat: Double
+        let lon: Double
+    }
+}
+
+// Song data model - final version after all API calls
 struct Song: Identifiable, Codable {
     let id: String
     let name: String
@@ -258,6 +364,8 @@ struct Song: Identifiable, Codable {
     let bio: String
     let latitude: Double
     let longitude: Double
+    let artImageUrl: String
+    let songId: String
 }
 
 #Preview {

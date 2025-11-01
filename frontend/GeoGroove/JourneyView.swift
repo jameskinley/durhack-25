@@ -25,7 +25,8 @@ struct JourneyView: View {
     
     var progressPercentage: Double {
         guard songs.count > 0 else { return 0 }
-        return Double(currentIndex) / Double(songs.count)
+        // Use (songs.count - 1) as denominator so the bar reaches 100% at the last song
+        return Double(currentIndex) / Double(max(1, songs.count - 1))
     }
     
     var timeRemaining: String {
@@ -71,7 +72,8 @@ struct JourneyView: View {
                         }
                         .frame(width: 60)
                         .padding(.vertical, 12)
-                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        // Make this background match the progress bar track
+                        .background(Color(UIColor.tertiarySystemGroupedBackground))
                         
                         // Progress bar
                         GeometryReader { geometry in
@@ -119,7 +121,8 @@ struct JourneyView: View {
                         }
                         .frame(width: 60)
                         .padding(.vertical, 12)
-                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        // Make this background match the progress bar track
+                        .background(Color(UIColor.tertiarySystemGroupedBackground))
                     }
                     .frame(width: 60)
                     .background(Color(UIColor.tertiarySystemGroupedBackground))
@@ -295,20 +298,62 @@ struct SongCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 16) {
-                // Song number / playing indicator
+                // Song artwork / playing indicator
                 ZStack {
-                    Circle()
-                        .fill(isPlaying ? Color.blue : Color.gray.opacity(0.3))
+                    if let url = URL(string: song.artImageUrl), !song.artImageUrl.isEmpty {
+                        // Show artwork when available
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            case .failure(_):
+                                Color.gray.opacity(0.3)
+                            default:
+                                // Loading placeholder
+                                Color.gray.opacity(0.15)
+                            }
+                        }
                         .frame(width: 50, height: 50)
-                    
-                    if isPlaying {
-                        Image(systemName: "waveform")
-                            .font(.title3)
-                            .foregroundColor(.white)
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle()
+                                .stroke(isCurrent ? Color.blue.opacity(0.6) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: isPlaying ? 6 : 2)
+
+                        // Overlay playing indicator or small index badge
+                        if isPlaying {
+                            Image(systemName: "waveform")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                                .shadow(radius: 2)
+                        } else {
+                            Text("\(index)")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Color.black.opacity(0.3))
+                                .clipShape(Circle())
+                                .offset(x: 12, y: 12)
+                        }
                     } else {
-                        Text("\(index)")
-                            .font(.headline)
-                            .foregroundColor(isPlaying ? .white : .primary)
+                        // Fallback when no artwork URL
+                        Circle()
+                            .fill(isPlaying ? Color.blue : Color.gray.opacity(0.3))
+                            .frame(width: 50, height: 50)
+
+                        if isPlaying {
+                            Image(systemName: "waveform")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                        } else {
+                            Text("\(index)")
+                                .font(.headline)
+                                .foregroundColor(isPlaying ? .white : .primary)
+                        }
                     }
                 }
                 
