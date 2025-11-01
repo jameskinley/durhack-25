@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { createUser, getAllTags, getUserByName } from '../lib/api';
+import { createJourney, getAllTags, getUserByName } from '../lib/api';
 
 export default function UserFlow() {
   const [name, setName] = useState('');
@@ -42,14 +42,14 @@ export default function UserFlow() {
   async function onCreateUser() {
     if (!canCreate) return;
     setLoading(true);
-    setStatus('Creating user...');
+    setStatus('Creating journey...');
     try {
-      const ok = await createUser(name.trim(), Array.from(selected));
+      const ok = await createJourney(name.trim(), Array.from(selected));
       if (ok.ok) {
-        setStatus('User created. Click "Get user" again to fetch id.');
+        setStatus('Journey created. Click "Get user" again to fetch id.');
         setSelected(new Set());
       } else {
-        setStatus('Failed to create user');
+        setStatus('Failed to create journey');
       }
     } catch (e: any) {
       setStatus(`Error: ${e?.message ?? 'failed'}`);
@@ -114,7 +114,7 @@ export default function UserFlow() {
               disabled={!canCreate || loading}
               className="h-10 px-4 rounded-lg bg-gray-900 text-white disabled:opacity-50"
             >
-              Create user
+              Create journey
             </button>
           </div>
         </div>

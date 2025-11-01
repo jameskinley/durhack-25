@@ -1,6 +1,6 @@
 export interface Point {
-    x: number;
-    y: number;
+    x: number; //lat
+    y: number; //lon
 }
 
 export interface CuratePlaylistRequest {
@@ -22,6 +22,7 @@ export interface Artist {
     name: string;
     location: Point; // use some API to get lat/lon from location name
     tags: string[];
+    comment?: string;
 }
 
 export interface Track {
@@ -36,5 +37,8 @@ export interface Track {
 export interface PlaylistTrack { 
     track: string;
     artist: string;
+    artist_tags?: string[];
+    location: Point;
+    comment?: string;
     type: 'track'  | 'bio';
 }

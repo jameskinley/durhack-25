@@ -12,13 +12,16 @@ export async function getUserByName(name: string): Promise<GetUserResponse> {
   return (post.data as GetUserResponse) ?? {};
 }
 
-export async function createUser(name: string, preferences: string[]): Promise<{ ok: boolean }> {
-  const resp = await supabase.functions.invoke('create-user', {
+export async function createJourney(name: string, preferences: string[]): Promise<{ ok: boolean }> {
+  const resp = await supabase.functions.invoke('create-journey', {
     body: { name, preferences }
   });
   if (resp.error) throw resp.error;
   return { ok: true };
 }
+
+// Backward-compat alias (optional):
+export const createUser = createJourney;
 
 export async function getAllTags(): Promise<string[]> {
   try {

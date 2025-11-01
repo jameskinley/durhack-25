@@ -81,6 +81,9 @@ export function curatePlaylist(userModel: UserModel, points: Point[], duration: 
                     playlist.push({
                         track: `${artist.name} bio`,
                         artist: artist.name,
+                        artist_tags: artist.tags,
+                        location: artist.location,
+                        comment: artist.comment ?? '',
                         type: 'bio'
                     });
                     segAccum += bioDuration;
@@ -97,6 +100,7 @@ export function curatePlaylist(userModel: UserModel, points: Point[], duration: 
             playlist.push({
                 track: track.title,
                 artist: artist.name,
+                location: artist.location,
                 type: 'track'
             });
 
