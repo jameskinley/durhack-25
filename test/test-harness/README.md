@@ -14,19 +14,16 @@ This app helps exercise the Supabase Edge functions from a simple, flat UI:
 npm install
 ```
 
-2) Configure the functions URL
+2) Configure Supabase client
 
-Copy `.env.example` to `.env.local` and set `VITE_FUNCTIONS_URL`.
-
-Examples:
+Copy `.env.example` to `.env.local` and set:
 
 ```ini
-# Local Supabase
-VITE_FUNCTIONS_URL=http://localhost:54321/functions/v1
-
-# Hosted Supabase
-# VITE_FUNCTIONS_URL=https://<project-ref>.functions.supabase.co
+VITE_SUPABASE_URL=YOUR_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 ```
+
+For supabase CLI local dev, URL is typically `http://localhost:54321` and the anon key can be read from the CLI env or dashboard.
 
 3) Run
 
