@@ -177,7 +177,7 @@ struct LoadingJourneyView: View {
                 id: "1",
                 name: "Bohemian Rhapsody",
                 artist: "Queen",
-                location: "Baker Street, London",
+                location: "Baker Street, London, UK",
                 bio: "\"This iconic six-minute opus was recorded at various studios across London in 1975. The operatic section features multi-tracked harmonies that took weeks to perfect. Freddie Mercury's vision for this genre-defying masterpiece changed rock music forever. Legend has it that the band recorded over 180 vocal overdubs, pushing the studio's 24-track tape machines to their absolute limits.\"",
                 latitude: 51.5237,
                 longitude: -0.1585

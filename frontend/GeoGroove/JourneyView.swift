@@ -6,15 +6,41 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct JourneyView: View {
     
     let songs: [Song]
     let startLocation: String
     let endLocation: String
+    let startCoordinate: CLLocationCoordinate2D
+    let endCoordinate: CLLocationCoordinate2D
     
     @Environment(\.dismiss) private var dismiss
     @State private var currentlyPlaying: String?
+    @State private var currentIndex: Int = 0
+    @State private var showMapModal = false
+    @State private var journeyStartTime = Date()
+    @State private var estimatedDuration: TimeInterval = 3600 // 1 hour default
+    
+    var progressPercentage: Double {
+        guard songs.count > 0 else { return 0 }
+        return Double(currentIndex) / Double(songs.count)
+    }
+    
+    var timeRemaining: String {
+        let elapsed = Date().timeIntervalSince(journeyStartTime)
+        let remaining = max(0, estimatedDuration - elapsed)
+        let minutes = Int(remaining / 60)
+        let hours = minutes / 60
+        let mins = minutes % 60
+        
+        if hours > 0 {
+            return "\(hours)h \(mins)m"
+        } else {
+            return "\(mins)m"
+        }
+    }
     
     var body: some View {
         NavigationStack {
@@ -30,56 +56,132 @@ struct JourneyView: View {
                 )
                 .ignoresSafeArea()
                 
-                VStack(spacing: 0) {
-                    // Header Card
-                    VStack(spacing: 12) {
-                        HStack {
-                            Image(systemName: "map.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Your Musical Journey")
-                                    .font(.headline)
-                                Text("\(startLocation) → \(endLocation)")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Text("\(songs.count) songs")
+                HStack(spacing: 0) {
+                    // Progress Sidebar
+                    VStack(spacing: 0) {
+                        // Time remaining at top
+                        VStack(spacing: 4) {
+                            Image(systemName: "clock.fill")
                                 .font(.caption)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.blue.opacity(0.2))
-                                .cornerRadius(12)
+                                .foregroundColor(.blue)
+                            Text(timeRemaining)
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
                         }
-                        .padding(16)
+                        .frame(width: 60)
+                        .padding(.vertical, 12)
                         .background(Color(UIColor.secondarySystemGroupedBackground))
-                        .cornerRadius(16)
-                        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, 12)
-                    
-                    // Songs List
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                                SongCard(
-                                    song: song,
-                                    index: index + 1,
-                                    isPlaying: currentlyPlaying == song.id,
-                                    onTap: {
-                                        currentlyPlaying = currentlyPlaying == song.id ? nil : song.id
-                                    }
-                                )
+                        
+                        // Progress bar
+                        GeometryReader { geometry in
+                            ZStack(alignment: .top) {
+                                // Background track
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.2))
+                                    .frame(width: 4)
+                                    .frame(maxWidth: .infinity)
+                                
+                                // Progress fill
+                                Rectangle()
+                                    .fill(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [.blue, .purple]),
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .frame(width: 4, height: geometry.size.height * progressPercentage)
+                                    .frame(maxWidth: .infinity)
+                                
+                                // Song position indicators
+                                ForEach(Array(songs.enumerated()), id: \.element.id) { index, _ in
+                                    let position = CGFloat(index) / CGFloat(max(1, songs.count - 1))
+                                    Circle()
+                                        .fill(index <= currentIndex ? Color.blue : Color.gray.opacity(0.3))
+                                        .frame(width: 8, height: 8)
+                                        .offset(y: geometry.size.height * position - 4)
+                                }
                             }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .padding(.vertical, 8)
+                        
+                        // Destination indicator at bottom
+                        VStack(spacing: 4) {
+                            Image(systemName: "flag.fill")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                            Text("End")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                        }
+                        .frame(width: 60)
+                        .padding(.vertical, 12)
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                    }
+                    .frame(width: 60)
+                    .background(Color(UIColor.tertiarySystemGroupedBackground))
+                    
+                    // Main Content
+                    VStack(spacing: 0) {
+                        // Header Card
+                        VStack(spacing: 12) {
+                            HStack {
+                                Image(systemName: "music.note.list")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Your Musical Journey")
+                                        .font(.headline)
+                                    Text("\(startLocation) → \(endLocation)")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Text("\(songs.count) songs")
+                                    .font(.caption)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.blue.opacity(0.2))
+                                    .cornerRadius(12)
+                            }
+                            .padding(16)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(16)
+                            .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                         }
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 100)
+                        .padding(.top, 20)
+                        .padding(.bottom, 12)
+                        
+                        // Songs and Bios List
+                        ScrollView {
+                            LazyVStack(spacing: 16) {
+                                ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                                    // Bio Card (appears before each song)
+                                    BioCard(bio: song.bio)
+                                    
+                                    // Song Card
+                                    SongCard(
+                                        song: song,
+                                        index: index + 1,
+                                        isPlaying: currentlyPlaying == song.id,
+                                        isCurrent: index == currentIndex,
+                                        onTap: {
+                                            currentlyPlaying = currentlyPlaying == song.id ? nil : song.id
+                                            currentIndex = index
+                                        }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 100)
+                        }
                     }
                 }
                 
@@ -109,7 +211,7 @@ struct JourneyView: View {
                         .cornerRadius(16)
                         .shadow(color: .blue.opacity(0.3), radius: 10, y: 5)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 80) // Account for sidebar
                     .padding(.bottom, 20)
                 }
             }
@@ -123,8 +225,63 @@ struct JourneyView: View {
                         }
                     }
                 }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showMapModal = true }) {
+                        Image(systemName: "map.fill")
+                            .font(.title3)
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            .sheet(isPresented: $showMapModal) {
+                MapModalView(
+                    songs: songs,
+                    startCoordinate: startCoordinate,
+                    endCoordinate: endCoordinate,
+                    startLocation: startLocation,
+                    endLocation: endLocation
+                )
             }
         }
+    }
+}
+
+// Bio Card Component
+struct BioCard: View {
+    let bio: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            // Opening quote
+            Image(systemName: "quote.opening")
+                .font(.title)
+                .foregroundColor(.purple.opacity(0.6))
+                .offset(y: -5)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text(bio)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .italic()
+                    .lineSpacing(4)
+            }
+            
+            // Closing quote
+            Image(systemName: "quote.closing")
+                .font(.title)
+                .foregroundColor(.purple.opacity(0.6))
+                .offset(y: 5)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.purple.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.purple.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
 }
 
@@ -132,6 +289,7 @@ struct SongCard: View {
     let song: Song
     let index: Int
     let isPlaying: Bool
+    let isCurrent: Bool
     let onTap: () -> Void
     
     var body: some View {
@@ -190,7 +348,14 @@ struct SongCard: View {
             .padding(16)
             .background(Color(UIColor.secondarySystemGroupedBackground))
             .cornerRadius(16)
-            .shadow(color: .black.opacity(0.1), radius: isPlaying ? 12 : 4, y: isPlaying ? 6 : 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        isCurrent ? Color.blue.opacity(0.5) : Color.clear,
+                        lineWidth: 3
+                    )
+            )
+            .shadow(color: .black.opacity(isCurrent ? 0.2 : 0.1), radius: isPlaying ? 12 : 4, y: isPlaying ? 6 : 2)
             .scaleEffect(isPlaying ? 1.02 : 1.0)
             .animation(.spring(response: 0.3), value: isPlaying)
         }
@@ -198,15 +363,181 @@ struct SongCard: View {
     }
 }
 
-#Preview {
-    JourneyView(
-        songs: [
-            Song(id: "1", name: "Bohemian Rhapsody", artist: "Queen", location: "Baker Street, London"),
-            Song(id: "2", name: "Waterloo Sunset", artist: "The Kinks", location: "Waterloo Bridge, London"),
-            Song(id: "3", name: "London Calling", artist: "The Clash", location: "Westminster, London"),
-            Song(id: "4", name: "A Day in the Life", artist: "The Beatles", location: "Piccadilly Circus, London")
-        ],
-        startLocation: "Baker Street",
-        endLocation: "Kings Cross"
-    )
+// Map Modal View
+struct MapModalView: View {
+    let songs: [Song]
+    let startCoordinate: CLLocationCoordinate2D
+    let endCoordinate: CLLocationCoordinate2D
+    let startLocation: String
+    let endLocation: String
+    
+    @Environment(\.dismiss) private var dismiss
+    @State private var position = MapCameraPosition.automatic
+    @State private var isGeocoding = true
+    @StateObject private var routeViewModel = RouteViewModel()
+    
+    let radiusInMeters: CLLocationDistance = 6000 // 6km radius
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Map(position: $position) {
+                    // Route polyline
+                    if let route = routeViewModel.route {
+                        MapPolyline(route.polyline)
+                            .stroke(Color.blue, lineWidth: 5)
+                    }
+                    
+                    // Start marker
+                    Annotation("Start", coordinate: startCoordinate) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "play.fill")
+                                .foregroundColor(.white)
+                                .font(.system(size: 16))
+                        }
+                    }
+                    
+                    // End marker
+                    Annotation("End", coordinate: endCoordinate) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "flag.fill")
+                                .foregroundColor(.white)
+                                .font(.system(size: 16))
+                        }
+                    }
+                    
+                    // Song location markers with radius
+                    ForEach(songs, id: \.id) { song in
+                        let coordinate = CLLocationCoordinate2D(
+                            latitude: song.latitude,
+                            longitude: song.longitude
+                        )
+                        
+                        // Radius circle (6km)
+                        MapCircle(center: coordinate, radius: radiusInMeters)
+                            .foregroundStyle(Color.blue.opacity(0.2))
+                            .stroke(Color.blue, lineWidth: 2)
+                        
+                        // Pin annotation
+                        Annotation(song.location, coordinate: coordinate) {
+                            VStack(spacing: 4) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.purple)
+                                        .frame(width: 36, height: 36)
+                                    
+                                    Text("\(songs.firstIndex(where: { $0.id == song.id }) ?? 0 + 1)")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.white)
+                                }
+                                
+                                Text(song.name)
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.white)
+                                    .cornerRadius(8)
+                                    .shadow(radius: 2)
+                            }
+                        }
+                    }
+                }
+                .mapControls {
+                    MapUserLocationButton()
+                    MapCompass()
+                    MapScaleView()
+                }
+                
+                // Loading overlay
+                if isGeocoding {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                        
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Loading map...")
+                                .font(.subheadline)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(Color.black.opacity(0.7))
+                                .cornerRadius(12)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Journey Map")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            updateMapRegion()
+            routeViewModel.calculateRoute(from: startLocation, to: endLocation, transportType: .driving)
+            // Hide loading immediately since we're using coordinates now
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isGeocoding = false
+            }
+        }
+    }
+    
+    private func updateMapRegion() {
+        // Calculate map region to show all points, including start/end and all songs
+        var minLat = min(startCoordinate.latitude, endCoordinate.latitude)
+        var maxLat = max(startCoordinate.latitude, endCoordinate.latitude)
+        var minLon = min(startCoordinate.longitude, endCoordinate.longitude)
+        var maxLon = max(startCoordinate.longitude, endCoordinate.longitude)
+        
+        for song in songs {
+            let coordinate = CLLocationCoordinate2D(latitude: song.latitude, longitude: song.longitude)
+            minLat = min(minLat, coordinate.latitude)
+            maxLat = max(maxLat, coordinate.latitude)
+            minLon = min(minLon, coordinate.longitude)
+            maxLon = max(maxLon, coordinate.longitude)
+        }
+        
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLon + maxLon) / 2
+        )
+        
+        let latSpan = max(0.01, (maxLat - minLat) * 1.3)
+        let lonSpan = max(0.01, (maxLon - minLon) * 1.3)
+        
+        let span = MKCoordinateSpan(
+            latitudeDelta: latSpan,
+            longitudeDelta: lonSpan
+        )
+        
+        position = .region(MKCoordinateRegion(center: center, span: span))
+    }
 }
+
+
+//#Preview {
+//    JourneyView(
+//        songs: [
+//            Song(id: "1", name: "Bohemian Rhapsody", artist: "Queen", location: "Baker Street, London"),
+//            Song(id: "2", name: "Waterloo Sunset", artist: "The Kinks", location: "Waterloo Bridge, London"),
+//            Song(id: "3", name: "London Calling", artist: "The Clash", location: "Westminster, London"),
+//            Song(id: "4", name: "A Day in the Life", artist: "The Beatles", location: "Piccadilly Circus, London")
+//        ],
+//        startLocation: "Baker Street",
+//        endLocation: "Kings Cross"
+//    )
+//}
