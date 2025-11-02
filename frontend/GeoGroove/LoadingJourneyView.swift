@@ -162,89 +162,151 @@ struct LoadingJourneyView: View {
             }.resume()
             */
             
-            // Using dummy data for now
-            print("🎵 Loading dummy data...")
-            self.songs = self.generateDummySongs()
-            print("🎵 Generated \(self.songs.count) songs")
-            print("🎵 Setting showSongs to true...")
-            self.showSongs = true
-            print("🎵 showSongs is now: \(self.showSongs)")
+            // Mock a tracks API response (same shape as TrackResponse)
+            print("🎵 Mocking tracks API response...")
+            let mockTracks = self.generateDummyTrackResponses()
+            print("🎵 Mock tracks count: \(mockTracks.count). Enriching with Spotify metadata...")
+
+            // Enrich each track with Spotify metadata (art image & spotify id) then build Song objects
+            self.enrichTracksWithMetadata(mockTracks)
         }
     }
     
-    /*
+    
+    /// Enrich tracks (from your backend) by querying the Spotify Web API for each track to
+    /// retrieve the Spotify track id and album artwork URL. Requires `SpotifyAuthManager.shared.accessToken`.
     private func enrichTracksWithMetadata(_ tracks: [TrackResponse]) {
-        var enrichedSongs: [Song] = []
+        var results: [Song?] = Array(repeating: nil, count: tracks.count)
         let group = DispatchGroup()
-        
+
+        let token = SpotifyAuthManager.shared.accessToken
+
         for (index, track) in tracks.enumerated() {
             group.enter()
-            
-            // API CALL 2: Get art image and song ID
-            let artURL = URL(string: "https://your-api.com/track/\(track.track)/art")!
-            var artRequest = URLRequest(url: artURL)
-            artRequest.httpMethod = "GET"
-            
-            var artImageUrl = ""
-            var songId = ""
-            
-            URLSession.shared.dataTask(with: artRequest) { data, response, error in
-                if let data = data {
-                    let decoder = JSONDecoder()
-                    if let artResponse = try? decoder.decode(ArtResponse.self, from: data) {
-                        artImageUrl = artResponse.imageUrl
-                        songId = artResponse.songId
+
+            // Build Spotify search query: prefer exact match on track name + artist
+            let query = "track:\(track.track) artist:\(track.artist)"
+            guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                // Fall back to creating Song without Spotify metadata
+                let fallbackSong = Song(
+                    id: String(index),
+                    name: track.track,
+                    artist: track.artist,
+                    location: formatLocation(track.location),
+                    bio: track.comment ?? "",
+                    latitude: track.location.lat,
+                    longitude: track.location.lon,
+                    artImageUrl: "",
+                    songId: ""
+                )
+                DispatchQueue.main.async { results[index] = fallbackSong }
+                group.leave()
+                continue
+            }
+
+            let urlStr = "https://api.spotify.com/v1/search?q=\(encoded)&type=track&limit=1"
+            guard let url = URL(string: urlStr) else {
+                group.leave(); continue
+            }
+
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            if let t = token { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
+
+            URLSession.shared.dataTask(with: req) { data, resp, err in
+                var artImageUrl = ""
+                var spotifyId = ""
+                var bioText = track.comment ?? ""
+
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let tracksObj = json["tracks"] as? [String: Any],
+                   let items = tracksObj["items"] as? [[String: Any]],
+                   let first = items.first {
+                    spotifyId = first["id"] as? String ?? ""
+                    if let album = first["album"] as? [String: Any],
+                       let images = album["images"] as? [[String: Any]],
+                       let firstImage = images.first,
+                       let imageUrl = firstImage["url"] as? String {
+                        artImageUrl = imageUrl
+                    }
+                } else {
+                    // If Spotify call fails (no token or network), we can fallback to empty image/id
+                    if let http = resp as? HTTPURLResponse {
+                        print("Spotify search HTTP \(http.statusCode) for \(track.track) by \(track.artist)")
+                    } else if let err = err {
+                        print("Spotify search error: \(err.localizedDescription)")
+                    } else {
+                        print("Spotify search: no data for \(track.track)")
                     }
                 }
-                
-                // API CALL 3: Get bio/comment
-                let bioURL = URL(string: "https://your-api.com/track/\(track.track)/bio")!
-                var bioRequest = URLRequest(url: bioURL)
-                bioRequest.httpMethod = "GET"
-                
-                var bio = ""
-                
-                URLSession.shared.dataTask(with: bioRequest) { data, response, error in
-                    if let data = data {
-                        let decoder = JSONDecoder()
-                        if let bioResponse = try? decoder.decode(BioResponse.self, from: data) {
-                            bio = bioResponse.bio
+
+                /*
+                 API CALL 3 (optional): fetch bio/comment from backend using either backend track id
+                 or the spotifyId obtained above. Keep this template for when you hook up the bio API.
+
+                if !spotifyId.isEmpty {
+                    let bioURL = URL(string: "https://your-api.com/track/\(spotifyId)/bio")!
+                    var bioRequest = URLRequest(url: bioURL)
+                    bioRequest.httpMethod = "GET"
+
+                    URLSession.shared.dataTask(with: bioRequest) { bioData, bioResp, bioErr in
+                        if let bioData = bioData {
+                            let decoder = JSONDecoder()
+                            if let bioResponse = try? decoder.decode(BioResponse.self, from: bioData) {
+                                bioText = bioResponse.bio
+                            }
                         }
-                    }
-                    
-                    // Create Song object with all collected data
-                    let song = Song(
-                        id: songId.isEmpty ? String(index) : songId,
-                        name: track.track,
-                        artist: track.artist,
-                        location: self.formatLocation(track.location),
-                        bio: bio.isEmpty ? track.comment ?? "" : bio,
-                        latitude: track.location.lat,
-                        longitude: track.location.lon,
-                        artImageUrl: artImageUrl,
-                        songId: songId
-                    )
-                    
-                    DispatchQueue.main.async {
-                        enrichedSongs.append(song)
-                    }
-                    
-                    group.leave()
-                }.resume()
+                        // Continue building Song object below (you can move creation into this closure if you need the bio)
+                    }.resume()
+                }
+                */
+
+                let song = Song(
+                    id: spotifyId.isEmpty ? String(index) : spotifyId,
+                    name: track.track,
+                    artist: track.artist,
+                    location: self.formatLocation(track.location),
+                    bio: bioText,
+                    latitude: track.location.lat,
+                    longitude: track.location.lon,
+                    artImageUrl: artImageUrl,
+                    songId: spotifyId
+                )
+
+                DispatchQueue.main.async {
+                    results[index] = song
+                }
+
+                group.leave()
             }.resume()
         }
-        
+
         group.notify(queue: .main) {
-            print("🎵 Enriched \(enrichedSongs.count) tracks with metadata")
-            self.songs = enrichedSongs.sorted { tracksResponse[$0].startIndex < tracksResponse[$1].startIndex }
+            // Preserve original ordering by mapping the results array
+            let final = results.compactMap { $0 }
+            print("🎵 Enriched \(final.count) tracks with Spotify metadata")
+            self.songs = final
             self.showSongs = true
         }
     }
-    
+
+    private func generateDummyTrackResponses() -> [TrackResponse] {
+        return [
+            TrackResponse(track: "Bohemian Rhapsody", artist: "Queen", tags: ["rock"], location: TrackResponse.LocationData(lat: 51.5237, lon: -0.1585), type: "track", comment: "An operatic masterpiece."),
+            TrackResponse(track: "Waterloo Sunset", artist: "The Kinks", tags: ["rock"], location: TrackResponse.LocationData(lat: 51.5081, lon: -0.1169), type: "track", comment: "A bittersweet London love song."),
+            TrackResponse(track: "London Calling", artist: "The Clash", tags: ["punk"], location: TrackResponse.LocationData(lat: 51.5007, lon: -0.1246), type: "track", comment: "A punk anthem."),
+            TrackResponse(track: "A Day in the Life", artist: "The Beatles", tags: ["rock"], location: TrackResponse.LocationData(lat: 51.5099, lon: -0.1342), type: "track", comment: "A psychedelic classic."),
+            TrackResponse(track: "Parklife", artist: "Blur", tags: ["britpop"], location: TrackResponse.LocationData(lat: 51.5074, lon: -0.1657), type: "track", comment: "90s Britpop energy."),
+            TrackResponse(track: "Common People", artist: "Pulp", tags: ["britpop"], location: TrackResponse.LocationData(lat: 51.5171, lon: -0.2068), type: "track", comment: "A social critique."),
+            TrackResponse(track: "River Deep Mountain High", artist: "Ike & Tina Turner", tags: ["soul"], location: TrackResponse.LocationData(lat: 51.5076, lon: -0.0994), type: "track", comment: "Phil Spector's wall of sound."),
+            TrackResponse(track: "God Save the Queen", artist: "Sex Pistols", tags: ["punk"], location: TrackResponse.LocationData(lat: 51.5390, lon: -0.1426), type: "track", comment: "Controversial punk single.")
+        ]
+    }
     private func formatLocation(_ location: TrackResponse.LocationData) -> String {
         return "Lat: \(location.lat), Lon: \(location.lon)"
     }
-    */
+
     
     private func generateDummySongs() -> [Song] {
         return [

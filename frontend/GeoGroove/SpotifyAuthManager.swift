@@ -198,6 +198,51 @@ final class SpotifyAuthManager: NSObject, ObservableObject {
         task.resume()
     }
 
+    /// Play an ordered list of Spotify URIs. This will attempt to start playback with the provided
+    /// URIs in the order given. Uses the same `/v1/me/player/play` endpoint with the `uris` array.
+    func play(uris: [String], completion: @escaping (Bool, String?) -> Void) {
+        guard let token = accessToken else {
+            completion(false, "No access token available")
+            return
+        }
+
+        let url = URL(string: "https://api.spotify.com/v1/me/player/play")!
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = ["uris": uris]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let task = URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(false, "Network error: \(err.localizedDescription)")
+                return
+            }
+
+            if let http = resp as? HTTPURLResponse {
+                switch http.statusCode {
+                case 204:
+                    completion(true, nil)
+                case 202:
+                    completion(true, nil)
+                case 401:
+                    completion(false, "Unauthorized - token may have expired")
+                case 404:
+                    completion(false, "No active Spotify device found. Start Spotify on a device and try again.")
+                default:
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    completion(false, "HTTP \(http.statusCode): \(bodyStr)")
+                }
+            } else {
+                completion(false, "Unknown response")
+            }
+        }
+
+        task.resume()
+    }
+
     // MARK: - PKCE helpers
     private static func generateCodeVerifier() -> String {
         let length = 128

@@ -193,8 +193,36 @@ struct JourneyView: View {
                     Spacer()
                     
                     Button(action: {
-                        // TODO: Start playback of all songs
-                        print("Playing all songs in order")
+                        // Start playback of all songs in order using Spotify API
+                        let uris = songs.compactMap { song -> String? in
+                            guard !song.songId.isEmpty else { return nil }
+                            // Ensure spotify:track: prefix
+                            if song.songId.starts(with: "spotify:") {
+                                return song.songId
+                            } else {
+                                return "spotify:track:\(song.songId)"
+                            }
+                        }
+
+                        guard !uris.isEmpty else {
+                            print("No playable Spotify URIs available")
+                            return
+                        }
+
+                        // Update UI optimistic state
+                        currentlyPlaying = songs.first?.id
+                        currentIndex = 0
+                        journeyStartTime = Date()
+
+                        SpotifyAuthManager.shared.play(uris: uris) { success, message in
+                            DispatchQueue.main.async {
+                                if success {
+                                    print("Playback started with \(uris.count) tracks")
+                                } else {
+                                    print("Playback error: \(message ?? "unknown")")
+                                }
+                            }
+                        }
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
