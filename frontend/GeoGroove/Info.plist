@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95aHNybXBlYmpobmNqb2xxY3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5OTMzNTgsImV4cCI6MjA3NzU2OTM1OH0.G6Pi8jlFWgXy34JVn-tGPnfy3Ee1dYthuLMuhs4gcpc</string>
+	<key>SUPABASE_URL</key>
+	<string>https://oyhsrmpebjhncjolqcxz.supabase.co/</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>alexmc-c.geogroove</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>geogroove</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
