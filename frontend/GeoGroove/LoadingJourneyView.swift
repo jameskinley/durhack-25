@@ -25,6 +25,21 @@ struct LoadingJourneyView: View {
     @State private var showSongs = false
     @State private var songs: [Song] = []
     @State private var journeyId: String?
+    @Environment(\.dismiss) private var dismiss
+
+    // Compute an estimated duration to pass into the JourneyView so its time display
+    // matches the routing result (or falls back to transport-type estimates).
+    private var estimatedDurationForPresentation: TimeInterval {
+        if let r = route {
+            return r.expectedTravelTime
+        }
+        switch transportType {
+        case .driving:
+            return 1200 // 20 minutes
+        case .transit:
+            return 1500 // 25 minutes
+        }
+    }
     
     var body: some View {
         ZStack {
@@ -114,13 +129,22 @@ struct LoadingJourneyView: View {
             isAnimating = true
             fetchSongs()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .returnToHome)) { _ in
+            // If a return-to-home signal is received (from JourneyView), pop this view
+            // (it's presented inside a NavigationStack) so the app returns further up.
+            // Use DispatchQueue.main to ensure we call dismiss on the main thread.
+            DispatchQueue.main.async {
+                dismiss()
+            }
+        }
         .fullScreenCover(isPresented: $showSongs) {
             JourneyView(
                 songs: songs,
                 startLocation: startLocation,
                 endLocation: endLocation,
                 startCoordinate: startCoordinate,
-                endCoordinate: endCoordinate
+                endCoordinate: endCoordinate,
+                estimatedDuration: estimatedDurationForPresentation
             )
         }
         .onChange(of: showSongs) { oldValue, newValue in
@@ -211,12 +235,35 @@ struct LoadingJourneyView: View {
             print("🎵 Using estimated duration: \(estimatedDuration) seconds")
         }
         
+        // Sample points so we send at most 1 point per 3 minutes (180s) of estimated duration.
+        // Ensure start and end are preserved and evenly space intermediate points.
+        if !points.isEmpty {
+            let totalSeconds = duration.first ?? 0
+            // At least 2 points (start and end) for display; compute allowed points from duration
+            let allowedPoints = max(2, Int(ceil(Double(max(1, totalSeconds)) / 180.0)))
+            if points.count > allowedPoints {
+                var sampled: [LocationPoint] = []
+                let n = allowedPoints
+                let lastIndex = points.count - 1
+                for i in 0..<n {
+                    let idx = Int(round(Double(i) * Double(lastIndex) / Double(max(1, n - 1))))
+                    let safeIdx = min(max(0, idx), lastIndex)
+                    sampled.append(points[safeIdx])
+                }
+                print("🎵 Sampling points: reduced from \(points.count) to \(sampled.count) points (max 1 per 3 minutes)")
+                points = sampled
+            } else {
+                print("🎵 No sampling required: \(points.count) points within allowed limit")
+            }
+        }
+        
         SupabaseService.shared.curatePlaylist(journeyId: journeyId, points: points, duration: duration) { result in
             switch result {
             case .success(let playlistTracks):
+                print(playlistTracks)
                 let validTracks = playlistTracks.filter { $0.type == "track" }
                 print("🎵 Received \(playlistTracks.count) items, \(validTracks.count) are tracks")
-                
+                print(validTracks)
                 if validTracks.isEmpty {
                     print("🎵 No tracks returned; falling back to mock data")
                     let mockTracks = self.generateDummyPlaylistTracks()
@@ -346,8 +393,17 @@ struct LoadingJourneyView: View {
         group.notify(queue: .main) {
             // Preserve original ordering by mapping the results array
             let final = results.compactMap { $0 }
-            print("🎵 Enriched \(final.count) tracks with Spotify metadata")
-            self.songs = final
+            // Deduplicate exact duplicates (prefer unique spotify songId if present, otherwise use id)
+            var seen = Set<String>()
+            let deduped: [Song] = final.filter { song in
+                let key = song.songId.isEmpty ? song.id : song.songId
+                if seen.contains(key) { return false }
+                seen.insert(key)
+                return true
+            }
+
+            print("🎵 Enriched \(final.count) tracks with Spotify metadata, deduped to \(deduped.count) unique tracks")
+            self.songs = deduped
             self.showSongs = true
         }
     }

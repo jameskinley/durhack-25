@@ -20,6 +20,7 @@ struct RouteView: View {
     @StateObject private var routeViewModel = RouteViewModel()
     @State private var position = MapCameraPosition.automatic
     @State private var showLoadingJourney = false
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         VStack(spacing: 0) {
@@ -180,6 +181,12 @@ struct RouteView: View {
                     origin: MKMapPoint(x: rect.origin.x - rect.size.width * 0.1, y: rect.origin.y - rect.size.height * 0.1),
                     size: MKMapSize(width: rect.size.width * 1.2, height: rect.size.height * 1.2)
                 ))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .returnToHome)) { _ in
+            // Pop this RouteView (so the navigation stack returns to Home)
+            DispatchQueue.main.async {
+                dismiss()
             }
         }
     }

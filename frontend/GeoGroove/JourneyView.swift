@@ -9,12 +9,14 @@ import SwiftUI
 import MapKit
 
 struct JourneyView: View {
-    
+
     let songs: [Song]
     let startLocation: String
     let endLocation: String
     let startCoordinate: CLLocationCoordinate2D
     let endCoordinate: CLLocationCoordinate2D
+    // Optional initial duration passed from the route-generation flow
+    let initialEstimatedDuration: TimeInterval?
     
     @Environment(\.dismiss) private var dismiss
     @State private var currentlyPlaying: String?
@@ -24,6 +26,18 @@ struct JourneyView: View {
     @State private var showCloseDialog = false
     @State private var journeyStartTime = Date()
     @State private var estimatedDuration: TimeInterval = 3600 // 1 hour default
+
+    // Custom initializer to allow setting the initial @State value from a passed-in duration
+    init(songs: [Song], startLocation: String, endLocation: String, startCoordinate: CLLocationCoordinate2D, endCoordinate: CLLocationCoordinate2D, estimatedDuration: TimeInterval? = nil) {
+        self.songs = songs
+        self.startLocation = startLocation
+        self.endLocation = endLocation
+        self.startCoordinate = startCoordinate
+        self.endCoordinate = endCoordinate
+        self.initialEstimatedDuration = estimatedDuration
+        // Initialize the @State backing storage with the provided estimated duration or default
+        _estimatedDuration = State(initialValue: estimatedDuration ?? 3600)
+    }
     
     var progressPercentage: Double {
         guard songs.count > 0 else { return 0 }
@@ -99,7 +113,7 @@ struct JourneyView: View {
                                     .frame(maxWidth: .infinity)
                                 
                                 // Song position indicators
-                                ForEach(Array(songs.enumerated()), id: \.element.id) { index, _ in
+                                ForEach(Array(songs.enumerated()), id: \.offset) { index, _ in
                                     let position = CGFloat(index) / CGFloat(max(1, songs.count - 1))
                                     Circle()
                                         .fill(index <= currentIndex ? Color.blue : Color.gray.opacity(0.3))
@@ -167,7 +181,7 @@ struct JourneyView: View {
                         // Songs and Bios List
                         ScrollView {
                             LazyVStack(spacing: 16) {
-                                ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                                ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                                         // Bio Card (appears before each song)
                                         BioCard(bio: song.bio)
 
@@ -377,13 +391,17 @@ struct JourneyView: View {
         RecentJourneysStore.save(journey: record)
 
         // Dismiss view
+        // Tell parent views to return all the way to Home
+        NotificationCenter.default.post(name: .returnToHome, object: nil)
+        // Dismiss this fullScreenCover
         dismiss()
     }
 
     private func quitJourney() {
         // Stop playback where possible
         SpotifyAuthManager.shared.pause { _, _ in }
-        // Dismiss without saving
+        // Request navigation back to Home and dismiss this view
+        NotificationCenter.default.post(name: .returnToHome, object: nil)
         dismiss()
     }
 }
@@ -596,7 +614,7 @@ struct MapModalView: View {
                     }
                     
                     // Song location markers with radius
-                    ForEach(songs, id: \.id) { song in
+                    ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                         let coordinate = CLLocationCoordinate2D(
                             latitude: song.latitude,
                             longitude: song.longitude
@@ -615,7 +633,7 @@ struct MapModalView: View {
                                         .fill(Color.purple)
                                         .frame(width: 36, height: 36)
                                     
-                                    Text("\(songs.firstIndex(where: { $0.id == song.id }) ?? 0 + 1)")
+                                    Text("\(index + 1)")
                                         .font(.caption)
                                         .fontWeight(.bold)
                                         .foregroundColor(.white)
