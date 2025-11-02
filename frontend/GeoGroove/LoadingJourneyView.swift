@@ -293,7 +293,7 @@ struct LoadingJourneyView: View {
             group.enter()
             
             // Build Spotify search query: prefer exact match on track name + artist
-            let query = "track:\(track.track) artist:\(track.artist)"
+            let query = "\(track.track) \(track.artist)"
             guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
                 // Fall back to creating Song without Spotify metadata
                 let fallbackSong = Song(
