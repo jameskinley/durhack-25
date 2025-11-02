@@ -102,8 +102,8 @@ export default function MapPicker({ journeyId }: { journeyId?: string | null }) 
       const data = await res.json();
       const coords: [number, number][] | undefined = data?.routes?.[0]?.geometry?.coordinates;
       if (!coords || coords.length === 0) return null;
-      // Convert [lon, lat] -> [lat, lon]
-      return coords.map(([lon, lat]) => [lat, lon]);
+  // Convert OSRM [lon, lat] -> [lat, lon]
+  return coords.map(([lon, lat]) => [lat, lon]);
     } catch (e) {
       console.error('route failed', e);
       return null;
@@ -139,9 +139,10 @@ export default function MapPicker({ journeyId }: { journeyId?: string | null }) 
       for (let i = 0; i < pts.length; i += step) sampled.push(pts[i]);
       const last = pts[pts.length - 1];
       if (sampled.length === 0 || sampled[sampled.length - 1] !== last) sampled.push(last);
-      return sampled.map(([lat, lon]) => ({ x: lon, y: lat }));
+      // Our backend expects Point.x = latitude, Point.y = longitude
+      return sampled.map(([lat, lon]) => ({ x: lat, y: lon }));
     }
-    if (a && b) return [ { x: a.lng, y: a.lat }, { x: b.lng, y: b.lat } ];
+    if (a && b) return [ { x: a.lat, y: a.lng }, { x: b.lat, y: b.lng } ];
     return [];
   }
 

@@ -44,7 +44,7 @@ export async function curatePlaylist(params: {
 }): Promise<PlaylistTrack[]> {
   const { journeyId, points, durationSeconds } = params;
   const resp = await supabase.functions.invoke('curate-playlist', {
-    body: { userId: journeyId, points, duration: durationSeconds }
+    body: { journeyId, points, duration: durationSeconds }
   });
   if (resp.error) throw resp.error;
   return (resp.data as PlaylistTrack[]) ?? [];
