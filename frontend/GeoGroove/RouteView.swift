@@ -138,7 +138,8 @@ struct RouteView: View {
                     endCoordinate: routeViewModel.endCoordinate ?? CLLocationCoordinate2D(latitude: 0, longitude: 0),
                     transportType: transportType,
                     genres: genres,
-                    decades: decades
+                    decades: decades,
+                    route: routeViewModel.route
                 )) {
                     HStack {
                         Image(systemName: "play.fill")

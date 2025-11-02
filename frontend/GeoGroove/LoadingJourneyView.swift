@@ -7,6 +7,8 @@
 
 import SwiftUI
 import CoreLocation
+import MapKit
+import Supabase
 
 struct LoadingJourneyView: View {
     
@@ -17,10 +19,12 @@ struct LoadingJourneyView: View {
     let transportType: RouteOptionsView.TransportType
     let genres: String
     let decades: String
+    let route: MKRoute?
     
     @State private var isAnimating = false
     @State private var showSongs = false
     @State private var songs: [Song] = []
+    @State private var journeyId: String?
     
     var body: some View {
         ZStack {
@@ -125,65 +129,105 @@ struct LoadingJourneyView: View {
     }
     
     private func fetchSongs() {
-        print("🎵 Starting to fetch songs...")
+        print("🎵 Starting two-step journey creation flow...")
         
-        // Simulate API call delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+        // Step 1: Create a journey with preferences (genres + decades)
+        let preferences = [self.genres, self.decades].filter { !$0.isEmpty }
+        
+        SupabaseService.shared.createJourney(preferences: preferences) { result in
+            switch result {
+            case .success(let journeyId):
+                print("🎵 Journey created with ID: \(journeyId)")
+                self.journeyId = journeyId
+                
+                // Step 2: Curate a playlist for this journey
+                self.curatePlaylist(journeyId: journeyId)
+                
+            case .failure(let error):
+                print("🎵 Failed to create journey: \(error.localizedDescription). Using mock data.")
+                let mockTracks = self.generateDummyPlaylistTracks()
+                DispatchQueue.main.async { self.enrichPlaylistTracks(mockTracks) }
+            }
+        }
+    }
+    
+    private func curatePlaylist(journeyId: String) {
+        print("🎵 Curating playlist for journey...")
+        
+        // Extract all points from the route polyline
+        var points: [LocationPoint] = []
+        if let route = route {
+            // Get all coordinates from the polyline
+            let polyline = route.polyline
+            let pointCount = polyline.pointCount
+            var coordinates = [CLLocationCoordinate2D](repeating: CLLocationCoordinate2D(), count: pointCount)
+            polyline.getCoordinates(&coordinates, range: NSRange(location: 0, length: pointCount))
             
-            /*
-            // API CALL 1: Get tracks list
-            let tracksURL = URL(string: "https://your-api.com/tracks")!
-            var tracksRequest = URLRequest(url: tracksURL)
-            tracksRequest.httpMethod = "POST"
-            tracksRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            
-            let tracksBody: [String: Any] = [
-                "start": self.startLocation,
-                "end": self.endLocation,
-                "transport": self.transportType.rawValue,
-                "genres": self.genres,
-                "decades": self.decades
+            // Convert to LocationPoint array
+            points = coordinates.map { LocationPoint(x: $0.latitude, y: $0.longitude) }
+            print("🎵 Extracted \(points.count) points from route polyline")
+        } else {
+            // Fallback to just start and end
+            points = [
+                LocationPoint(x: startCoordinate.latitude, y: startCoordinate.longitude),
+                LocationPoint(x: endCoordinate.latitude, y: endCoordinate.longitude)
             ]
-            
-            tracksRequest.httpBody = try? JSONSerialization.data(withJSONObject: tracksBody)
-            
-            URLSession.shared.dataTask(with: tracksRequest) { data, response, error in
-                if let data = data {
-                    let decoder = JSONDecoder()
-                    if let tracksResponse = try? decoder.decode([TrackResponse].self, from: data) {
-                        // Filter out non-track types
-                        let validTracks = tracksResponse.filter { $0.type == "track" }
-                        print("🎵 Received \(tracksResponse.count) items, \(validTracks.count) are tracks")
-                        
-                        // For each track, make two more API calls
-                        self.enrichTracksWithMetadata(validTracks)
-                    }
+            print("🎵 No route available; using start and end coordinates only")
+        }
+        
+        // Use actual duration from route, or estimate based on transport type
+        let duration: [Int]
+        if let route = route {
+            let durationInSeconds = Int(route.expectedTravelTime)
+            duration = [durationInSeconds]
+            print("🎵 Using route duration: \(durationInSeconds) seconds (\(durationInSeconds/60) minutes)")
+        } else {
+            // Fallback estimate based on transport type
+            let estimatedDuration: Int
+            switch transportType {
+            case .driving:
+                estimatedDuration = 1200 // 20 minutes
+            case .transit:
+                estimatedDuration = 1500 // 25 minutes
+            }
+            duration = [estimatedDuration]
+            print("🎵 Using estimated duration: \(estimatedDuration) seconds")
+        }
+        
+        SupabaseService.shared.curatePlaylist(journeyId: journeyId, points: points, duration: duration) { result in
+            switch result {
+            case .success(let playlistTracks):
+                let validTracks = playlistTracks.filter { $0.type == "track" }
+                print("🎵 Received \(playlistTracks.count) items, \(validTracks.count) are tracks")
+                
+                if validTracks.isEmpty {
+                    print("🎵 No tracks returned; falling back to mock data")
+                    let mockTracks = self.generateDummyPlaylistTracks()
+                    DispatchQueue.main.async { self.enrichPlaylistTracks(mockTracks) }
+                } else {
+                    DispatchQueue.main.async { self.enrichPlaylistTracks(validTracks) }
                 }
-            }.resume()
-            */
-            
-            // Mock a tracks API response (same shape as TrackResponse)
-            print("🎵 Mocking tracks API response...")
-            let mockTracks = self.generateDummyTrackResponses()
-            print("🎵 Mock tracks count: \(mockTracks.count). Enriching with Spotify metadata...")
-
-            // Enrich each track with Spotify metadata (art image & spotify id) then build Song objects
-            self.enrichTracksWithMetadata(mockTracks)
+                
+            case .failure(let error):
+                print("🎵 Failed to curate playlist: \(error.localizedDescription). Using mock data.")
+                let mockTracks = self.generateDummyPlaylistTracks()
+                DispatchQueue.main.async { self.enrichPlaylistTracks(mockTracks) }
+            }
         }
     }
     
     
-    /// Enrich tracks (from your backend) by querying the Spotify Web API for each track to
+    /// Enrich playlist tracks (from backend) by querying the Spotify Web API for each track to
     /// retrieve the Spotify track id and album artwork URL. Requires `SpotifyAuthManager.shared.accessToken`.
-    private func enrichTracksWithMetadata(_ tracks: [TrackResponse]) {
+    private func enrichPlaylistTracks(_ tracks: [PlaylistTrack]) {
         var results: [Song?] = Array(repeating: nil, count: tracks.count)
         let group = DispatchGroup()
-
+        
         let token = SpotifyAuthManager.shared.accessToken
-
+        
         for (index, track) in tracks.enumerated() {
             group.enter()
-
+            
             // Build Spotify search query: prefer exact match on track name + artist
             let query = "track:\(track.track) artist:\(track.artist)"
             guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
@@ -192,10 +236,10 @@ struct LoadingJourneyView: View {
                     id: String(index),
                     name: track.track,
                     artist: track.artist,
-                    location: formatLocation(track.location),
+                    location: "Lat: \(track.location.x), Lon: \(track.location.y)",
                     bio: track.comment ?? "",
-                    latitude: track.location.lat,
-                    longitude: track.location.lon,
+                    latitude: track.location.x,
+                    longitude: track.location.y,
                     artImageUrl: "",
                     songId: ""
                 )
@@ -203,21 +247,21 @@ struct LoadingJourneyView: View {
                 group.leave()
                 continue
             }
-
+            
             let urlStr = "https://api.spotify.com/v1/search?q=\(encoded)&type=track&limit=1"
             guard let url = URL(string: urlStr) else {
                 group.leave(); continue
             }
-
+            
             var req = URLRequest(url: url)
             req.httpMethod = "GET"
             if let t = token { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
-
+            
             URLSession.shared.dataTask(with: req) { data, resp, err in
                 var artImageUrl = ""
                 var spotifyId = ""
                 var bioText = track.comment ?? ""
-
+                
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let tracksObj = json["tracks"] as? [String: Any],
@@ -240,48 +284,48 @@ struct LoadingJourneyView: View {
                         print("Spotify search: no data for \(track.track)")
                     }
                 }
-
+                
                 /*
                  API CALL 3 (optional): fetch bio/comment from backend using either backend track id
                  or the spotifyId obtained above. Keep this template for when you hook up the bio API.
-
-                if !spotifyId.isEmpty {
-                    let bioURL = URL(string: "https://your-api.com/track/\(spotifyId)/bio")!
-                    var bioRequest = URLRequest(url: bioURL)
-                    bioRequest.httpMethod = "GET"
-
-                    URLSession.shared.dataTask(with: bioRequest) { bioData, bioResp, bioErr in
-                        if let bioData = bioData {
-                            let decoder = JSONDecoder()
-                            if let bioResponse = try? decoder.decode(BioResponse.self, from: bioData) {
-                                bioText = bioResponse.bio
-                            }
-                        }
-                        // Continue building Song object below (you can move creation into this closure if you need the bio)
-                    }.resume()
-                }
-                */
-
+                 
+                 if !spotifyId.isEmpty {
+                 let bioURL = URL(string: "https://your-api.com/track/\(spotifyId)/bio")!
+                 var bioRequest = URLRequest(url: bioURL)
+                 bioRequest.httpMethod = "GET"
+                 
+                 URLSession.shared.dataTask(with: bioRequest) { bioData, bioResp, bioErr in
+                 if let bioData = bioData {
+                 let decoder = JSONDecoder()
+                 if let bioResponse = try? decoder.decode(BioResponse.self, from: bioData) {
+                 bioText = bioResponse.bio
+                 }
+                 }
+                 // Continue building Song object below (you can move creation into this closure if you need the bio)
+                 }.resume()
+                 }
+                 */
+                
                 let song = Song(
                     id: spotifyId.isEmpty ? String(index) : spotifyId,
                     name: track.track,
                     artist: track.artist,
-                    location: self.formatLocation(track.location),
+                    location: "Lat: \(track.location.x), Lon: \(track.location.y)",
                     bio: bioText,
-                    latitude: track.location.lat,
-                    longitude: track.location.lon,
+                    latitude: track.location.x,
+                    longitude: track.location.y,
                     artImageUrl: artImageUrl,
                     songId: spotifyId
                 )
-
+                
                 DispatchQueue.main.async {
                     results[index] = song
                 }
-
+                
                 group.leave()
             }.resume()
         }
-
+        
         group.notify(queue: .main) {
             // Preserve original ordering by mapping the results array
             let final = results.compactMap { $0 }
@@ -290,7 +334,20 @@ struct LoadingJourneyView: View {
             self.showSongs = true
         }
     }
-
+    
+    private func generateDummyPlaylistTracks() -> [PlaylistTrack] {
+        return [
+            PlaylistTrack(track: "Bohemian Rhapsody", artist: "Queen", artist_tags: ["rock"], location: LocationPoint(x: 51.5237, y: -0.1585), comment: "An operatic masterpiece.", type: "track"),
+            PlaylistTrack(track: "Waterloo Sunset", artist: "The Kinks", artist_tags: ["rock"], location: LocationPoint(x: 51.5081, y: -0.1169), comment: "A bittersweet London love song.", type: "track"),
+            PlaylistTrack(track: "London Calling", artist: "The Clash", artist_tags: ["punk"], location: LocationPoint(x: 51.5007, y: -0.1246), comment: "A punk anthem.", type: "track"),
+            PlaylistTrack(track: "A Day in the Life", artist: "The Beatles", artist_tags: ["rock"], location: LocationPoint(x: 51.5099, y: -0.1342), comment: "A psychedelic classic.", type: "track"),
+            PlaylistTrack(track: "Parklife", artist: "Blur", artist_tags: ["britpop"], location: LocationPoint(x: 51.5074, y: -0.1657), comment: "90s Britpop energy.", type: "track"),
+            PlaylistTrack(track: "Common People", artist: "Pulp", artist_tags: ["britpop"], location: LocationPoint(x: 51.5171, y: -0.2068), comment: "A social critique.", type: "track"),
+            PlaylistTrack(track: "River Deep Mountain High", artist: "Ike & Tina Turner", artist_tags: ["soul"], location: LocationPoint(x: 51.5076, y: -0.0994), comment: "Phil Spector's wall of sound.", type: "track"),
+            PlaylistTrack(track: "God Save the Queen", artist: "Sex Pistols", artist_tags: ["punk"], location: LocationPoint(x: 51.5390, y: -0.1426), comment: "Controversial punk single.", type: "track")
+        ]
+    }
+    
     private func generateDummyTrackResponses() -> [TrackResponse] {
         return [
             TrackResponse(track: "Bohemian Rhapsody", artist: "Queen", tags: ["rock"], location: TrackResponse.LocationData(lat: 51.5237, lon: -0.1585), type: "track", comment: "An operatic masterpiece."),
@@ -306,7 +363,7 @@ struct LoadingJourneyView: View {
     private func formatLocation(_ location: TrackResponse.LocationData) -> String {
         return "Lat: \(location.lat), Lon: \(location.lon)"
     }
-
+    
     
     private func generateDummySongs() -> [Song] {
         return [
@@ -430,16 +487,17 @@ struct Song: Identifiable, Codable {
     let songId: String
 }
 
-#Preview {
-    NavigationStack {
-        LoadingJourneyView(
-            startLocation: "Baker Street",
-            endLocation: "Kings Cross",
-            startCoordinate: CLLocationCoordinate2D(latitude: 51.5237, longitude: -0.1585),
-            endCoordinate: CLLocationCoordinate2D(latitude: 51.5308, longitude: -0.1238),
-            transportType: .driving,
-            genres: "Rock",
-            decades: "1980s"
-        )
-    }
-}
+//#Preview {
+//    NavigationStack {
+//        LoadingJourneyView(
+//            startLocation: "Baker Street",
+//            endLocation: "Kings Cross",
+//            startCoordinate: CLLocationCoordinate2D(latitude: 51.5237, longitude: -0.1585),
+//            endCoordinate: CLLocationCoordinate2D(latitude: 51.5308, longitude: -0.1238),
+//            transportType: RouteOptionsView.TransportType.driving,
+//            genres: "Rock",
+//            decades: "1980s",
+//            route: nil as MKRoute?
+//        )
+//    }
+//}
