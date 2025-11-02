@@ -2,3 +2,4 @@
 **/.venv
 **/venv-coreml
 **/LocalSummarizer.mlpackage
+node_modules/
