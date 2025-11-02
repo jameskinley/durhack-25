@@ -21,6 +21,7 @@ struct JourneyView: View {
     @State private var currentIndex: Int = 0
     @State private var isPlaying: Bool = false
     @State private var showMapModal = false
+    @State private var showCloseDialog = false
     @State private var journeyStartTime = Date()
     @State private var estimatedDuration: TimeInterval = 3600 // 1 hour default
     
@@ -314,6 +315,16 @@ struct JourneyView: View {
                     }
                 }
                 
+                // Close / Quit Journey
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showCloseDialog = true }) {
+                        Image(systemName: "xmark.circle")
+                            .font(.title3)
+                            .foregroundColor(.red)
+                    }
+                }
+
+                // Map button
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showMapModal = true }) {
                         Image(systemName: "map.fill")
@@ -321,6 +332,19 @@ struct JourneyView: View {
                             .foregroundColor(.blue)
                     }
                 }
+            }
+            .confirmationDialog("End Journey", isPresented: $showCloseDialog, titleVisibility: .visible) {
+                Button("Exit and complete") {
+                    completeJourney()
+                }
+
+                Button("Quit journey", role: .destructive) {
+                    quitJourney()
+                }
+
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Choose whether to complete and save this journey or quit without saving.")
             }
             .sheet(isPresented: $showMapModal) {
                 MapModalView(
@@ -332,6 +356,35 @@ struct JourneyView: View {
                 )
             }
         }
+    }
+
+    // MARK: - Journey actions
+    private func completeJourney() {
+        // Stop playback where possible
+        SpotifyAuthManager.shared.pause { _, _ in }
+
+        // Build a simple record and save
+        let duration = Date().timeIntervalSince(journeyStartTime)
+        let record = JourneyRecord(
+            id: UUID().uuidString,
+            startLocation: startLocation,
+            endLocation: endLocation,
+            date: Date(),
+            songCount: songs.count,
+            duration: duration
+        )
+
+        RecentJourneysStore.save(journey: record)
+
+        // Dismiss view
+        dismiss()
+    }
+
+    private func quitJourney() {
+        // Stop playback where possible
+        SpotifyAuthManager.shared.pause { _, _ in }
+        // Dismiss without saving
+        dismiss()
     }
 }
 

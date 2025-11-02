@@ -145,7 +145,7 @@ struct HomeView: View {
                     .opacity(auth.isConnected ? 1.0 : 0.55)
                     
                     // Recent Journeys
-                    NavigationLink(destination: Text("Recent journeys will appear here.")
+                    NavigationLink(destination: RecentJourneysView()
                         .navigationTitle("Recent Journeys")) {
                         HStack(spacing: 12) {
                             ZStack {
