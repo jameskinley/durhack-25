@@ -19,6 +19,7 @@ struct JourneyView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentlyPlaying: String?
     @State private var currentIndex: Int = 0
+    @State private var isPlaying: Bool = false
     @State private var showMapModal = false
     @State private var journeyStartTime = Date()
     @State private var estimatedDuration: TimeInterval = 3600 // 1 hour default
@@ -166,20 +167,63 @@ struct JourneyView: View {
                         ScrollView {
                             LazyVStack(spacing: 16) {
                                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                                    // Bio Card (appears before each song)
-                                    BioCard(bio: song.bio)
-                                    
-                                    // Song Card
-                                    SongCard(
-                                        song: song,
-                                        index: index + 1,
-                                        isPlaying: currentlyPlaying == song.id,
-                                        isCurrent: index == currentIndex,
-                                        onTap: {
-                                            currentlyPlaying = currentlyPlaying == song.id ? nil : song.id
-                                            currentIndex = index
-                                        }
-                                    )
+                                        // Bio Card (appears before each song)
+                                        BioCard(bio: song.bio)
+
+                                        // Song Card
+                                        SongCard(
+                                            song: song,
+                                            index: index + 1,
+                                            isPlaying: currentlyPlaying == song.id && isPlaying,
+                                            isCurrent: index == currentIndex,
+                                            onTap: {
+                                                // Build ordered URIs for the full playlist
+                                                let uris = songs.compactMap { s -> String? in
+                                                    guard !s.songId.isEmpty else { return nil }
+                                                    if s.songId.starts(with: "spotify:") { return s.songId }
+                                                    return "spotify:track:\(s.songId)"
+                                                }
+
+                                                // If tapped a different track, skip to that index in the queue
+                                                if song.id != currentlyPlaying {
+                                                    SpotifyAuthManager.shared.play(uris: uris, startIndex: index) { success, message in
+                                                        DispatchQueue.main.async {
+                                                            if success {
+                                                                currentlyPlaying = song.id
+                                                                currentIndex = index
+                                                                isPlaying = true
+                                                                journeyStartTime = Date()
+                                                            } else {
+                                                                print("Playback error: \(message ?? "unknown")")
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Tapped the currently playing track -> toggle pause/resume
+                                                    if isPlaying {
+                                                        SpotifyAuthManager.shared.pause { success, message in
+                                                            DispatchQueue.main.async {
+                                                                if success {
+                                                                    isPlaying = false
+                                                                } else {
+                                                                    print("Pause error: \(message ?? "unknown")")
+                                                                }
+                                                            }
+                                                        }
+                                                    } else {
+                                                        SpotifyAuthManager.shared.play(uris: uris, startIndex: index) { success, message in
+                                                            DispatchQueue.main.async {
+                                                                if success {
+                                                                    isPlaying = true
+                                                                } else {
+                                                                    print("Playback error: \(message ?? "unknown")")
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        )
                                 }
                             }
                             .padding(.horizontal, 20)
@@ -209,24 +253,37 @@ struct JourneyView: View {
                             return
                         }
 
-                        // Update UI optimistic state
-                        currentlyPlaying = songs.first?.id
-                        currentIndex = 0
-                        journeyStartTime = Date()
+                        
 
-                        SpotifyAuthManager.shared.play(uris: uris) { success, message in
-                            DispatchQueue.main.async {
-                                if success {
-                                    print("Playback started with \(uris.count) tracks")
-                                } else {
-                                    print("Playback error: \(message ?? "unknown")")
+                        if !isPlaying {
+                            // Start playback from the beginning
+                            SpotifyAuthManager.shared.play(uris: uris, startIndex: 0) { success, message in
+                                DispatchQueue.main.async {
+                                    if success {
+                                        print("Playback started with \(uris.count) tracks")
+                                        isPlaying = true
+                                    } else {
+                                        print("Playback error: \(message ?? "unknown")")
+                                    }
+                                }
+                            }
+                        } else {
+                            // Pause playback
+                            SpotifyAuthManager.shared.pause { success, message in
+                                DispatchQueue.main.async {
+                                    if success {
+                                        print("Playback paused")
+                                        isPlaying = false
+                                    } else {
+                                        print("Pause error: \(message ?? "unknown")")
+                                    }
                                 }
                             }
                         }
                     }) {
                         HStack {
-                            Image(systemName: "play.fill")
-                            Text("Play Journey")
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            Text(isPlaying ? "Pause Journey" : "Play Journey")
                                 .fontWeight(.semibold)
                         }
                         .foregroundColor(.white)
@@ -344,9 +401,9 @@ struct SongCard: View {
                             }
                         }
                         .frame(width: 50, height: 50)
-                        .clipShape(Circle())
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(
-                            Circle()
+                            RoundedRectangle(cornerRadius: 8)
                                 .stroke(isCurrent ? Color.blue.opacity(0.6) : Color.clear, lineWidth: 2)
                         )
                         .shadow(radius: isPlaying ? 6 : 2)
@@ -368,8 +425,8 @@ struct SongCard: View {
                                 .offset(x: 12, y: 12)
                         }
                     } else {
-                        // Fallback when no artwork URL
-                        Circle()
+                        // Fallback when no artwork URL - square placeholder
+                        RoundedRectangle(cornerRadius: 8)
                             .fill(isPlaying ? Color.blue : Color.gray.opacity(0.3))
                             .frame(width: 50, height: 50)
 

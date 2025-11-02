@@ -243,6 +243,92 @@ final class SpotifyAuthManager: NSObject, ObservableObject {
         task.resume()
     }
 
+    /// Play an ordered list of Spotify URIs and optionally start at a given index offset.
+    func play(uris: [String], startIndex: Int?, completion: @escaping (Bool, String?) -> Void) {
+        guard let token = accessToken else {
+            completion(false, "No access token available")
+            return
+        }
+
+        let url = URL(string: "https://api.spotify.com/v1/me/player/play")!
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: Any] = ["uris": uris]
+        if let idx = startIndex {
+            body["offset"] = ["position": idx]
+        }
+
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let task = URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(false, "Network error: \(err.localizedDescription)")
+                return
+            }
+
+            if let http = resp as? HTTPURLResponse {
+                switch http.statusCode {
+                case 204:
+                    completion(true, nil)
+                case 202:
+                    completion(true, nil)
+                case 401:
+                    completion(false, "Unauthorized - token may have expired")
+                case 404:
+                    completion(false, "No active Spotify device found. Start Spotify on a device and try again.")
+                default:
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    completion(false, "HTTP \(http.statusCode): \(bodyStr)")
+                }
+            } else {
+                completion(false, "Unknown response")
+            }
+        }
+
+        task.resume()
+    }
+
+    /// Pause playback on the user's active Spotify device.
+    func pause(completion: @escaping (Bool, String?) -> Void) {
+        guard let token = accessToken else {
+            completion(false, "No access token available")
+            return
+        }
+
+        let url = URL(string: "https://api.spotify.com/v1/me/player/pause")!
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let task = URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(false, "Network error: \(err.localizedDescription)")
+                return
+            }
+
+            if let http = resp as? HTTPURLResponse {
+                switch http.statusCode {
+                case 204:
+                    completion(true, nil)
+                case 202:
+                    completion(true, nil)
+                case 401:
+                    completion(false, "Unauthorized - token may have expired")
+                default:
+                    let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                    completion(false, "HTTP \(http.statusCode): \(bodyStr)")
+                }
+            } else {
+                completion(false, "Unknown response")
+            }
+        }
+
+        task.resume()
+    }
+
     // MARK: - PKCE helpers
     private static func generateCodeVerifier() -> String {
         let length = 128
