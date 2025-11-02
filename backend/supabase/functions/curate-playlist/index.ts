@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { CuratePlaylistRequest } from "../_shared/structs.ts";
-import { curatePlaylist } from "./lib.ts";
 import handleCorsPreflight from "../_shared/cors.ts";
+import { scheduleTracks } from "./scheduler.ts";
 
 console.info('server started');
 
@@ -19,7 +19,7 @@ Deno.serve(async (req: Request) => {
     if (!journeyId || !Array.isArray(points) || points.length < 2 || !Number.isFinite(Number(duration))) {
       return new Response(JSON.stringify({ error: 'invalid request payload' }), { status: 400, headers: corsHeaders() });
     }
-    const playlist = await curatePlaylist(journeyId, points, duration);
+    const playlist = await scheduleTracks(journeyId, points, duration);
     return new Response(
       JSON.stringify(playlist),
       { headers: { ...corsHeaders(), 'Content-Type': 'application/json', 'Connection': 'keep-alive' } }

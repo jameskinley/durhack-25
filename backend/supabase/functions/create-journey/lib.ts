@@ -20,24 +20,12 @@ function getClient(): SupabaseClient {
 
 // Table names (adjust to your schema if different)
 const JOURNEYS_TABLE = 'journeys';
-const TRACKS_TABLE = 'tracks';
-const JOURNEY_CANDIDATE_TRACKS_TABLE = 'journey_candidate_tracks';
-
-// Tuning knobs (can be overridden via env vars)
-const MAX_SYMM_DIFF = Number(Deno.env.get('MAX_TAG_DIFF') ?? 2); // max symmetric-diff allowed
-const MAX_CANDIDATES = Number(Deno.env.get('MAX_CANDIDATES') ?? 200); // cap for stored candidates
 
 type UUID = string;
 
 type JourneyRow = {
     journey_id: UUID;
     preferences: string[];
-};
-
-type TrackRow = {
-    track_id: UUID;
-    title?: string;
-    tags: string[];
 };
 
 /**
