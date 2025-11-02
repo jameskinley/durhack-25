@@ -34,7 +34,7 @@ export async function getAllTags(): Promise<string[]> {
   } catch {
     // ignore and fall back
   }
-  return ['rock', 'pop', 'reggae', '60s', 'upbeat', 'jazz', 'electronic', 'indie'];
+  return ['rock', 'pop', 'reggae', '60s', 'upbeat', 'jazz', 'electronic', 'indie', 'alternative'];
 }
 
 export async function curatePlaylist(params: {

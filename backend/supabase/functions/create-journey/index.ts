@@ -16,7 +16,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { preferences }: CreateJourneyRequest = await req.json();
+    let { preferences }: CreateJourneyRequest = await req.json();
+    preferences = preferences.map(c => c.toLowerCase());
     if (!Array.isArray(preferences)) {
       return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400, headers: corsHeaders(req) });
     }

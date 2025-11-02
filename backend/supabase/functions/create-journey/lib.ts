@@ -15,7 +15,14 @@ function getClient(): SupabaseClient {
         });
         throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
     }
-    return createClient(url, serviceKey, { auth: { persistSession: false } });
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+    global: {
+      headers: { 'Cache-Control': 'no-store' },
+      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+        fetch(input, { ...(init ?? {}), cache: 'no-store' as RequestCache })
+    }
+  });
 }
 
 // Table names (adjust to your schema if different)
@@ -43,7 +50,7 @@ async function calculateCandidateTracksForJourney(journeyId: string): Promise<bo
   };
 
   const { data, error } = await supabase
-    .rpc('calculate_candidate_tracks', params);
+    .rpc('calculate_candidate_tracks_v2', params);
 
   if (error) {
     console.error('[calculateCandidateTracksForJourney] RPC error:', error);

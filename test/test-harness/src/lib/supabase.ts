@@ -9,5 +9,10 @@ if (!url || !anon) {
 }
 
 export const supabase = createClient(url ?? '', anon ?? '', {
-  auth: { persistSession: false }
+  auth: { persistSession: false },
+  global: {
+    headers: { 'Cache-Control': 'no-store' },
+    fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+      fetch(input, { ...(init ?? {}), cache: 'no-store' as RequestCache })
+  }
 });

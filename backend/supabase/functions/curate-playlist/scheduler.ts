@@ -12,8 +12,13 @@ function getClient() {
     throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
   }
   return createClient(url, serviceKey, {
-    auth: {
-      persistSession: false
+    auth: { persistSession: false },
+    // Prevent caching at the request layer for all PostgREST/RPC calls
+    global: {
+      headers: { 'Cache-Control': 'no-store' },
+      fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+        return fetch(input, { ...(init ?? {}), cache: 'no-store' as RequestCache });
+      }
     }
   });
 }
@@ -87,23 +92,8 @@ export async function scheduleTracks(journey_id : string, points : Point[], dura
     return [];
   }
 
-  // Filter out candidates with missing artist location data
-  const validCandidates = candidates.filter(
-    (c: { tracks: { track_name: any; artists: { region_lat: null; region_lon: null; }; }; }) =>
-      c.tracks &&
-      typeof c.tracks.track_name === 'string' &&
-      c.tracks.artists &&
-      c.tracks.artists.region_lat !== null &&
-      c.tracks.artists.region_lon !== null
-  );
-
-  if (validCandidates.length === 0) {
-    console.error('No valid candidates with location data');
-    return [];
-  }
-
-  // Normalize candidate objects to a consistent shape and include canonical fields
-  const normalizedCandidates = validCandidates.map((c: { tracks: any; track_id: any; rank: any; score: any; }) => {
+  // Normalize all candidate objects to a consistent shape and include canonical fields
+  const normalizedCandidates = (candidates || []).map((c: { tracks: any; track_id: any; rank: any; score: any; }) => {
     const track = c.tracks;
     const artistObj = track.artists || {};
     const canonicalName = normalizeName(track.track_name);
@@ -118,14 +108,24 @@ export async function scheduleTracks(journey_id : string, points : Point[], dura
       score: c.score ?? 0,
       duration_ms: track.duration_ms ?? 0,
       tags: track.tags ?? null,
-      artist_location: {
-        x: artistObj.region_lat,
-        y: artistObj.region_lon
-      },
+      artist_location: (artistObj.region_lat != null && artistObj.region_lon != null)
+        ? { x: artistObj.region_lat, y: artistObj.region_lon }
+        : null,
       tracks: track,
       artists: artistObj
     };
   });
+
+  console.log('[scheduleTracks] candidates:', {
+    total: normalizedCandidates.length,
+    withLocation: normalizedCandidates.filter((c: any) => !!c.artist_location).length,
+  });
+
+  // Determine dynamic max rank to avoid saturating normalization when rank > 100
+  const maxRank = normalizedCandidates.reduce((m: number, c: any) => Math.max(m, Number(c.rank ?? 0)), 1);
+  // Determine min/max score for normalization (higher SQL score is better)
+  const minScore = normalizedCandidates.reduce((m: number, c: any) => Math.min(m, Number(c.score ?? 0)), Number.POSITIVE_INFINITY);
+  const maxScore = normalizedCandidates.reduce((m: number, c: any) => Math.max(m, Number(c.score ?? 0)), Number.NEGATIVE_INFINITY);
 
   // Prepare journey point durations and bookkeeping
   const { points: journeyPoints, durations } = getPointDurations(points, duration);
@@ -141,6 +141,7 @@ export async function scheduleTracks(journey_id : string, points : Point[], dura
 
   let currentPointIndex = 0;
   let timeBudget = duration * 1000; // convert seconds to milliseconds
+  let remainingChunkMs = (durations[currentPointIndex] ?? 0) * 1000;
 
   // Pre-eliminate any duplicates by name from the candidate pool (keep highest-ranked instance)
   const bestByName = new Map();
@@ -158,45 +159,73 @@ export async function scheduleTracks(journey_id : string, points : Point[], dura
   while (timeBudget > 0 && availableCandidates.length > 0 && currentPointIndex < journeyPoints.length) {
     const currentPoint = journeyPoints[currentPointIndex];
 
-    // Score candidates by distance and rank
+    // Score candidates by distance and rank. Normalize distance to [0,1] to avoid dominating rank.
+    // If location is missing, use rank-only scoring.
+  const rawDistances: number[] = [];
+    for (const c of availableCandidates) {
+      if (c.artist_location) {
+        rawDistances.push(haversineDistance(currentPoint, c.artist_location));
+      }
+    }
+    const maxDistance = rawDistances.length ? Math.max(...rawDistances) : 0;
+
     const scoredCandidates = availableCandidates.map((candidate) => {
       const artistLocation = candidate.artist_location;
-      const distance = haversineDistance(currentPoint, artistLocation);
-      const normalizedRank = candidate.rank / 100.00; // assuming rank 0-100
-      const combinedScore = (distance * 0.5) + (normalizedRank * 0.5);
-      return { candidate, combinedScore, distance, artistLocation };
+      const hasLoc = Boolean(artistLocation);
+      const distanceKm = hasLoc ? haversineDistance(currentPoint, artistLocation as Point) : 0;
+      console.log("distancekm", distanceKm);
+      // Normalize distance: if we have a maxDistance, scale; else treat as 1 (neutral)
+      const distanceNorm = hasLoc && maxDistance > 0 ? Math.min(distanceKm / maxDistance, 1) : 1;
+
+      console.log("norm. distL", distanceNorm);
+      // Normalize rank within [0,1] based on max observed rank; lower is better
+      const denom = Math.max(1, (maxRank - 1));
+      const normalizedRank = Math.min(Math.max(((Number(candidate.rank ?? 0) - 1) / denom), 0), 1);
+      // Normalize score so that lower is worse, higher is better -> convert to cost
+      let scoreCost = 0.5; // neutral
+      if (Number.isFinite(minScore) && Number.isFinite(maxScore) && maxScore > minScore) {
+        const scoreNorm = (Number(candidate.score ?? 0) - minScore) / (maxScore - minScore); // 0..1 (higher better)
+        scoreCost = 1 - scoreNorm; // cost (lower better)
+      }
+      // Soft artist recency penalty to encourage variety
+      const priorCount = (artistCounts.get(candidate.canonicalArtistId) || 0) as number;
+      const artistPenalty = Math.min(priorCount * 0.15, 0.6);
+
+  // Emphasize geography over all other factors when location exists
+  const weightDistance = hasLoc ? 0.7 : 0.0; // location dominates when available
+  const remainingWeight = 1 - weightDistance;
+  // Split the remainder with a smaller share to rank and score
+  const weightRank = remainingWeight * 0.66; // rank stronger than score within the remainder
+  const weightScore = remainingWeight * 0.34;
+  // Note: we treat this as a COST function (lower is better).
+  // - distanceNorm is 0 for closest, 1 for farthest
+  // - normalizedRank is 0 for best rank, 1 for worst
+  // - scoreCost inverts the SQL score (higher score -> lower cost)
+  // We then sort ASC to pick the minimum-cost candidate.
+  const combinedScore = (weightDistance * distanceNorm) + (weightRank * normalizedRank) + (weightScore * scoreCost) + artistPenalty;
+      return { candidate, combinedScore, distance: distanceKm, artistLocation };
     });
 
     scoredCandidates.sort((a, b) => a.combinedScore - b.combinedScore);
 
-    // Find the first suitable track with strict duplicate-name lockout
-    let selectedIndex = -1;
-    for (let i = 0; i < scoredCandidates.length; i++) {
+    // Build shortlist of suitable candidates (respecting dedupe/caps/budget)
+    const shortlist: number[] = [];
+    for (let i = 0; i < scoredCandidates.length && shortlist.length < 12; i++) {
       const { candidate } = scoredCandidates[i];
-
-      // Strict name lockout
-      if (seenTrackNames.has(candidate.canonicalTrackName)) {
-        continue;
-      }
-
-      // Dedupe by track ID as a secondary guard
-      if (candidate.canonicalTrackId && seenTrackIds.has(candidate.canonicalTrackId)) {
-        continue;
-      }
-
-      // Artist saturation check
+      if (seenTrackNames.has(candidate.canonicalTrackName)) continue;
+      if (candidate.canonicalTrackId && seenTrackIds.has(candidate.canonicalTrackId)) continue;
       const artistCount = artistCounts.get(candidate.canonicalArtistId) || 0;
-      if (artistCount >= ARTIST_SATURATION_LIMIT) {
-        continue;
-      }
+      if (artistCount >= ARTIST_SATURATION_LIMIT) continue;
+      if (candidate.duration_ms > timeBudget) continue;
+      shortlist.push(i);
+    }
 
-      // Duration must fit remaining time budget
-      if (candidate.duration_ms > timeBudget) {
-        continue;
-      }
-
-      selectedIndex = i;
-      break;
+    // Randomize among top-K in shortlist to introduce variety
+    let selectedIndex = -1;
+    if (shortlist.length > 0) {
+      const K = Math.min(5, shortlist.length);
+      const pick = Math.floor(Math.random() * K);
+      selectedIndex = shortlist[pick];
     }
 
     // No suitable candidate at this point, advance to next point
@@ -272,10 +301,11 @@ export async function scheduleTracks(journey_id : string, points : Point[], dura
       }
     }
 
-    // Advance to next point if the selected track duration covers the point duration
-    const pointDurationMs = durations[currentPointIndex] * 1000;
-    if (selected.candidate.duration_ms >= pointDurationMs) {
+    // Advance along route by consuming current chunk duration with each added track
+    remainingChunkMs -= selected.candidate.duration_ms;
+    while (remainingChunkMs <= 0 && currentPointIndex < journeyPoints.length - 1) {
       currentPointIndex++;
+      remainingChunkMs += (durations[currentPointIndex] ?? 0) * 1000;
     }
   }
 
