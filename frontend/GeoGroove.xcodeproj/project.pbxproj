@@ -74,8 +74,8 @@
 			isa = PBXGroup;
 			children = (
 				4DED37452EB651D400149BDB /* GeoGroove */,
-				4D355BA52EB6F9AA00A974F5 /* Frameworks */,
 				4DED37442EB651D400149BDB /* Products */,
+				4D355BA52EB6F9AA00A974F5 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};

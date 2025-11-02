@@ -96,9 +96,6 @@ struct HomeView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Test Spotify")
                                     .font(.headline)
-                                Text("Play 'Never Gonna Give You Up'")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
                             }
 
                             Spacer()
@@ -176,6 +173,35 @@ struct HomeView: View {
                     // Disabled until Spotify is connected
                     .disabled(!auth.isConnected)
                     .opacity(auth.isConnected ? 1.0 : 0.55)
+                    
+                    // Local ML Model
+                    NavigationLink(destination: ModelView()) {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.purple.opacity(0.12))
+                                    .frame(width: 56, height: 56)
+                                Image(systemName: "cpu.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.purple)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("ML Model Demo")
+                                    .font(.headline)
+                                Text("Test on-device text summarization")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                        }
+                        .padding()
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Color(UIColor.secondarySystemGroupedBackground)))
+                        .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
+                    }
                 }
                 .padding(.horizontal, 20)
 

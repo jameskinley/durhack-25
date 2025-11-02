@@ -20,14 +20,11 @@ print("Tracing…")
 traced = torch.jit.trace(wrapped, input_ids)
 
 print("Converting to Core ML…")
+# Use flexible shape: batch size is fixed to 1, but sequence length can vary
 mlmodel = ct.convert(
     traced,
     convert_to="mlprogram",
     inputs=[ct.TensorType(name="input_ids",
-                          shape=input_ids.shape,
+                          shape=ct.Shape(shape=(1, ct.RangeDim(1, 512))),
                           dtype=np.int32)],
-    compute_units=ct.ComputeUnit.ALL,
-)
-
-mlmodel.save("LocalSummarizer.mlpackage")
-print("✅ Conversion complete.")
+    compute_uni
