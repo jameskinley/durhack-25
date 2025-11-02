@@ -132,7 +132,24 @@ struct LoadingJourneyView: View {
         print("🎵 Starting two-step journey creation flow...")
         
         // Step 1: Create a journey with preferences (genres + decades)
-        let preferences = [self.genres, self.decades].filter { !$0.isEmpty }
+        // If the user selected "Any" for both genre and decade, send an empty list
+        // to indicate no preference. Also ignore individual "Any" or empty values.
+        let normalizedGenres = self.genres.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDecades = self.decades.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var preferences: [String] = []
+        if normalizedGenres.caseInsensitiveCompare("Any") == .orderedSame &&
+            normalizedDecades.caseInsensitiveCompare("Any") == .orderedSame {
+            // both explicitly "Any" -> send empty list
+            preferences = []
+        } else {
+            if !normalizedGenres.isEmpty && normalizedGenres.caseInsensitiveCompare("Any") != .orderedSame {
+                preferences.append(normalizedGenres)
+            }
+            if !normalizedDecades.isEmpty && normalizedDecades.caseInsensitiveCompare("Any") != .orderedSame {
+                preferences.append(normalizedDecades)
+            }
+        }
         
         SupabaseService.shared.createJourney(preferences: preferences) { result in
             switch result {

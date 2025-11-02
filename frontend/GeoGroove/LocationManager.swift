@@ -31,7 +31,6 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         lastLocation = locations.last
-        print("Location updated: \(String(describing: lastLocation?.coordinate))")
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
