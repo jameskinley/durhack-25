@@ -1,233 +1,283 @@
-import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
-import { PlaylistTrack, Point } from '../_shared/structs.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.36.0';
+import { Point } from '../_shared/structs.ts';
 
-function getClient(): SupabaseClient {
-    const url = Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!url || !serviceKey) {
-        console.error('Missing required env vars', {
-            hasUrl: Boolean(url),
-            hasServiceKey: Boolean(serviceKey)
-        });
-        throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+function getClient() {
+  const url = Deno.env.get('SUPABASE_URL');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !serviceKey) {
+    console.error('Missing required env vars', {
+      hasUrl: Boolean(url),
+      hasServiceKey: Boolean(serviceKey)
+    });
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE');
+  }
+  return createClient(url, serviceKey, {
+    auth: {
+      persistSession: false
     }
-    return createClient(url, serviceKey, { auth: { persistSession: false } });
+  });
 }
 
 const supabase = getClient();
 
-function haversineDistance(pointA: Point, pointB: Point): number {
-    const R = 6371;
-    const toRad = (deg: number) => deg * Math.PI / 180.00;
-    const dLat = toRad(pointB.x - pointA.x);
-    const dLon = toRad(pointB.y - pointA.y);
-    const a = Math.sin(dLat / 2.0) ** 2 + Math.cos(toRad(pointA.x)) * Math.cos(toRad(pointB.x)) * Math.sin(dLon / 2.0) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+function haversineDistance(pointA : Point, pointB : Point) {
+  const R = 6371;
+  const toRad = (deg : number) => deg * Math.PI / 180.0;
+  const dLat = toRad(pointB.x - pointA.x);
+  const dLon = toRad(pointB.y - pointA.y);
+  const a =
+    Math.sin(dLat / 2.0) ** 2 +
+    Math.cos(toRad(pointA.x)) * Math.cos(toRad(pointB.x)) * Math.sin(dLon / 2.0) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
-function getPointDurations(points: Point[], duration: number): { points: Point[], durations: number[] } {
-    const chunkTime = duration / points.length;
-    const durations = new Array(points.length).fill(chunkTime);
-    return { points, durations };
+function getPointDurations(points : Point[], duration: number) {
+  const chunkTime = duration / points.length;
+  const durations = new Array(points.length).fill(chunkTime);
+  return {
+    points,
+    durations
+  };
 }
 
-interface Candidate {
-    journey_id: string;
-    track_id: string;
-    rank: number;
-    score: number;
-    tracks: {
-        track_id: string;
-        track_name: string;
-        artist_id: string;
-        duration_ms: number;
-        tags: string[];
-        artists: {
-            artist_id: string;
-            artist_name: string;
-            region_lat: number;
-            region_lon: number;
-        };
+// Robust canonical name normalization: Unicode NFC, trim, collapse whitespace, lower-case
+function normalizeName(name: string) {
+  if (typeof name !== 'string') return '';
+  return name
+    .normalize('NFC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+export async function scheduleTracks(journey_id : string, points : Point[], duration : number) {
+  // Fetch candidate tracks with joined tracks and artists data
+  const { data: candidates, error } = await supabase
+    .from('journey_candidate_tracks')
+    .select(`
+      journey_id,
+      track_id,
+      rank,
+      score,
+      tracks!inner (
+        track_id,
+        track_name,
+        artist_id,
+        duration_ms,
+        tags,
+        artists!inner (
+          artist_id,
+          artist_name,
+          region_lat,
+          region_lon
+        )
+      )
+    `)
+    .eq('journey_id', journey_id)
+    .order('rank', { ascending: true });
+
+  if (error) {
+    console.error('Failed to fetch candidates:', error);
+    return [];
+  }
+
+  if (!candidates || candidates.length === 0) {
+    console.log('No candidates found for journey:', journey_id);
+    return [];
+  }
+
+  // Filter out candidates with missing artist location data
+  const validCandidates = candidates.filter(
+    (c: { tracks: { track_name: any; artists: { region_lat: null; region_lon: null; }; }; }) =>
+      c.tracks &&
+      typeof c.tracks.track_name === 'string' &&
+      c.tracks.artists &&
+      c.tracks.artists.region_lat !== null &&
+      c.tracks.artists.region_lon !== null
+  );
+
+  if (validCandidates.length === 0) {
+    console.error('No valid candidates with location data');
+    return [];
+  }
+
+  // Normalize candidate objects to a consistent shape and include canonical fields
+  const normalizedCandidates = validCandidates.map((c: { tracks: any; track_id: any; rank: any; score: any; }) => {
+    const track = c.tracks;
+    const artistObj = track.artists || {};
+    const canonicalName = normalizeName(track.track_name);
+    return {
+      raw: c,
+      canonicalTrackId: track.track_id ?? c.track_id,
+      canonicalTrackName: canonicalName,
+      displayTrackName: track.track_name, // keep original for display
+      canonicalArtistId: track.artist_id ?? artistObj.artist_id,
+      canonicalArtistName: artistObj.artist_name ?? '',
+      rank: c.rank ?? 0,
+      score: c.score ?? 0,
+      duration_ms: track.duration_ms ?? 0,
+      tags: track.tags ?? null,
+      artist_location: {
+        x: artistObj.region_lat,
+        y: artistObj.region_lon
+      },
+      tracks: track,
+      artists: artistObj
     };
-}
+  });
 
-export async function scheduleTracks(journey_id: string, points: Point[], duration: number): Promise<PlaylistTrack[]> {
-    // Fetch candidate tracks with joined tracks and artists data
-    const { data: candidates, error } = await supabase
-        .from('journey_candidate_tracks')
-        .select(`
-            journey_id,
-            track_id,
-            rank,
-            score,
-            tracks!inner (
-                track_id,
-                track_name,
-                artist_id,
-                duration_ms,
-                tags,
-                artists!inner (
-                    artist_id,
-                    artist_name,
-                    region_lat,
-                    region_lon
-                )
-            )
-        `)
-        .eq('journey_id', journey_id)
-        .order('rank', { ascending: true });
+  // Prepare journey point durations and bookkeeping
+  const { points: journeyPoints, durations } = getPointDurations(points, duration);
+  const playlist = [];
+  const seenTrackIds = new Set();
+  const seenTrackNames = new Set(); // strict global lockout by normalized name
+  const artistCounts = new Map();
+  const artistsWithBios = new Set();
 
-    if (error) {
-        console.error('Failed to fetch candidates:', error);
-        return [];
+  const BIO_DURATION_MS = 30000; // 30 seconds for bio
+  const ARTIST_SATURATION_LIMIT = 3; // Max tracks per artist
+  const BIO_TRIGGER_PERCENTAGE = 0.2; // Add bio after 20% of tracks
+
+  let currentPointIndex = 0;
+  let timeBudget = duration * 1000; // convert seconds to milliseconds
+
+  // Pre-eliminate any duplicates by name from the candidate pool (keep highest-ranked instance)
+  const bestByName = new Map();
+  for (const c of normalizedCandidates) {
+    const existing = bestByName.get(c.canonicalTrackName);
+    if (!existing || c.rank < existing.rank) {
+      bestByName.set(c.canonicalTrackName, c);
+    }
+  }
+  let availableCandidates = Array.from(bestByName.values());
+
+  let tracksSinceLastBioCheck = 0;
+  let lastAddedArtist = null;
+
+  while (timeBudget > 0 && availableCandidates.length > 0 && currentPointIndex < journeyPoints.length) {
+    const currentPoint = journeyPoints[currentPointIndex];
+
+    // Score candidates by distance and rank
+    const scoredCandidates = availableCandidates.map((candidate) => {
+      const artistLocation = candidate.artist_location;
+      const distance = haversineDistance(currentPoint, artistLocation);
+      const normalizedRank = candidate.rank / 100.00; // assuming rank 0-100
+      const combinedScore = (distance * 0.5) + (normalizedRank * 0.5);
+      return { candidate, combinedScore, distance, artistLocation };
+    });
+
+    scoredCandidates.sort((a, b) => a.combinedScore - b.combinedScore);
+
+    // Find the first suitable track with strict duplicate-name lockout
+    let selectedIndex = -1;
+    for (let i = 0; i < scoredCandidates.length; i++) {
+      const { candidate } = scoredCandidates[i];
+
+      // Strict name lockout
+      if (seenTrackNames.has(candidate.canonicalTrackName)) {
+        continue;
+      }
+
+      // Dedupe by track ID as a secondary guard
+      if (candidate.canonicalTrackId && seenTrackIds.has(candidate.canonicalTrackId)) {
+        continue;
+      }
+
+      // Artist saturation check
+      const artistCount = artistCounts.get(candidate.canonicalArtistId) || 0;
+      if (artistCount >= ARTIST_SATURATION_LIMIT) {
+        continue;
+      }
+
+      // Duration must fit remaining time budget
+      if (candidate.duration_ms > timeBudget) {
+        continue;
+      }
+
+      selectedIndex = i;
+      break;
     }
 
-    if (!candidates || candidates.length === 0) {
-        console.log('No candidates found for journey:', journey_id);
-        return [];
+    // No suitable candidate at this point, advance to next point
+    if (selectedIndex === -1) {
+      currentPointIndex++;
+      continue;
     }
 
-    // Filter out candidates with missing data
-    const validCandidates = candidates.filter((c: { tracks: { artists: { region_lat: null; region_lon: null; }; }; }) => 
-        c.tracks && 
-        c.tracks.artists && 
-        c.tracks.artists.region_lat !== null && 
-        c.tracks.artists.region_lon !== null
-    ) as Candidate[];
+    const selected = scoredCandidates[selectedIndex];
 
-    if (validCandidates.length === 0) {
-        console.error('No valid candidates with location data');
-        return [];
+    // Final guard: do not add if the normalized name exists (defensive)
+    if (seenTrackNames.has(selected.candidate.canonicalTrackName)) {
+      // Remove it from the pool and continue loop safely
+      availableCandidates = availableCandidates.filter(
+        (c) => c.canonicalTrackName !== selected.candidate.canonicalTrackName
+      );
+      continue;
     }
 
-    // Get point durations for the journey
-    const { points: journeyPoints, durations } = getPointDurations(points, duration);
+    // Add track to playlist
+    playlist.push({
+      track: selected.candidate.displayTrackName,
+      artist: selected.candidate.canonicalArtistName || selected.candidate.tracks.artists.artist_name,
+      artist_tags: selected.candidate.tags,
+      location: selected.artistLocation,
+      type: 'track'
+    });
 
-    const playlist: PlaylistTrack[] = [];
-    const seenTrackIds = new Set<string>();
-    const artistCounts = new Map<string, number>();
-    const artistsWithBios = new Set<string>();
-    const BIO_DURATION_MS = 30000; // 30 seconds for bio
-    const ARTIST_SATURATION_LIMIT = 3; // Max tracks per artist
-    const BIO_TRIGGER_PERCENTAGE = 0.2; // Add bio after 20% of tracks
-    
-    let currentPointIndex = 0;
-    let timeBudget = duration * 1000; // Convert to milliseconds
-    const availableCandidates = [...validCandidates];
-    let tracksSinceLastBioCheck = 0;
-    let lastAddedArtist: { id: string; name: string; location: Point; tags: string[] } | null = null;
+    // Mark seen by name (primary) and by ID (secondary)
+    seenTrackNames.add(selected.candidate.canonicalTrackName);
+    if (selected.candidate.canonicalTrackId) {
+      seenTrackIds.add(selected.candidate.canonicalTrackId);
+    }
 
-    while (timeBudget > 0 && availableCandidates.length > 0 && currentPointIndex < journeyPoints.length) {
-        const currentPoint = journeyPoints[currentPointIndex];
-        
-        // Score each candidate based on distance and rank
-        const scoredCandidates = availableCandidates.map(candidate => {
-            const artistLocation: Point = {
-                x: candidate.tracks.artists.region_lat,
-                y: candidate.tracks.artists.region_lon
-            };
-            const distance = haversineDistance(currentPoint, artistLocation);
-            // Lower score is better (combining distance and rank)
-            // Normalize rank (0-1) and distance, then weight them
-            const normalizedRank = candidate.rank / 100; // Assuming rank is 0-100
-            const combinedScore = distance * 0.7 + normalizedRank * 0.3;
-            return { candidate, combinedScore, distance, artistLocation };
-        });
+    // Update artist count using canonicalArtistId
+    const artistId = selected.candidate.canonicalArtistId;
+    artistCounts.set(artistId, (artistCounts.get(artistId) || 0) + 1);
 
-        // Sort by score (best first)
-        scoredCandidates.sort((a, b) => a.combinedScore - b.combinedScore);
+    timeBudget -= selected.candidate.duration_ms;
+    tracksSinceLastBioCheck++;
 
-        // Find the first suitable track
-        let selectedIndex = -1;
-        for (let i = 0; i < scoredCandidates.length; i++) {
-            const { candidate } = scoredCandidates[i];
-            
-            // Check if track is already in playlist
-            if (seenTrackIds.has(candidate.track_id)) {
-                continue;
-            }
+    // Store last added artist info for potential bio insertion
+    lastAddedArtist = {
+      id: artistId,
+      name: selected.candidate.canonicalArtistName,
+      location: selected.artistLocation,
+      tags: selected.candidate.tags
+    };
 
-            // Check artist saturation
-            const artistCount = artistCounts.get(candidate.tracks.artist_id) || 0;
-            if (artistCount >= ARTIST_SATURATION_LIMIT) {
-                continue;
-            }
+    // Remove all candidates with the same normalized name (strict)
+    availableCandidates = availableCandidates.filter(
+      (c) => c.canonicalTrackName !== selected.candidate.canonicalTrackName
+    );
 
-            // Check if track fits in remaining time budget
-            if (candidate.tracks.duration_ms > timeBudget) {
-                continue;
-            }
+    // Check for bio insertion
+    const totalTracksInPlaylist = playlist.filter((p) => p.type === 'track').length;
+    const shouldInsertBio =
+      tracksSinceLastBioCheck >= Math.max(1, Math.ceil(totalTracksInPlaylist * BIO_TRIGGER_PERCENTAGE));
 
-            selectedIndex = i;
-            break;
-        }
-
-        // If no suitable track found, try next point or break
-        if (selectedIndex === -1) {
-            currentPointIndex++;
-            continue;
-        }
-
-        const selected = scoredCandidates[selectedIndex];
-
-        // Add track to playlist
+    if (shouldInsertBio && timeBudget >= BIO_DURATION_MS && lastAddedArtist) {
+      if (!artistsWithBios.has(lastAddedArtist.id)) {
         playlist.push({
-            track: selected.candidate.tracks.track_name,
-            artist: selected.candidate.tracks.artists.artist_name,
-            artist_tags: selected.candidate.tracks.tags,
-            location: selected.artistLocation,
-            type: 'track'
+          track: '',
+          artist: lastAddedArtist.name,
+          artist_tags: lastAddedArtist.tags,
+          location: lastAddedArtist.location,
+          comment: `Biography of ${lastAddedArtist.name}`,
+          type: 'bio'
         });
-
-        // Update tracking variables
-        seenTrackIds.add(selected.candidate.track_id);
-        artistCounts.set(selected.candidate.tracks.artist_id, (artistCounts.get(selected.candidate.tracks.artist_id) || 0) + 1);
-        timeBudget -= selected.candidate.tracks.duration_ms;
-        tracksSinceLastBioCheck++;
-
-        // Store info about the artist we just added
-        lastAddedArtist = {
-            id: selected.candidate.tracks.artist_id,
-            name: selected.candidate.tracks.artists.artist_name,
-            location: selected.artistLocation,
-            tags: selected.candidate.tracks.tags
-        };
-
-        // Remove selected candidate from available pool
-        const candidateIndex = availableCandidates.findIndex(c => c.track_id === selected.candidate.track_id);
-        if (candidateIndex !== -1) {
-            availableCandidates.splice(candidateIndex, 1);
-        }
-
-        // Check if we should insert a bio (after 20% of tracks have been added since last bio)
-        const totalTracksInPlaylist = playlist.filter(p => p.type === 'track').length;
-        const shouldInsertBio = tracksSinceLastBioCheck >= Math.max(1, Math.ceil(totalTracksInPlaylist * BIO_TRIGGER_PERCENTAGE));
-        
-        if (shouldInsertBio && timeBudget >= BIO_DURATION_MS && lastAddedArtist) {
-            // Only add bio if we haven't already added one for this artist
-            if (!artistsWithBios.has(lastAddedArtist.id)) {
-                playlist.push({
-                    track: '', // No track for bio
-                    artist: lastAddedArtist.name,
-                    artist_tags: lastAddedArtist.tags,
-                    location: lastAddedArtist.location,
-                    comment: `Biography of ${lastAddedArtist.name}`,
-                    type: 'bio'
-                });
-
-                artistsWithBios.add(lastAddedArtist.id);
-                timeBudget -= BIO_DURATION_MS;
-                tracksSinceLastBioCheck = 0;
-            }
-        }
-
-        // Move to next point if we've used up its duration
-        const pointDuration = durations[currentPointIndex] * 1000; // Convert to ms
-        if (selected.candidate.tracks.duration_ms >= pointDuration) {
-            currentPointIndex++;
-        }
+        artistsWithBios.add(lastAddedArtist.id);
+        timeBudget -= BIO_DURATION_MS;
+        tracksSinceLastBioCheck = 0;
+      }
     }
 
-    return playlist;
+    // Advance to next point if the selected track duration covers the point duration
+    const pointDurationMs = durations[currentPointIndex] * 1000;
+    if (selected.candidate.duration_ms >= pointDurationMs) {
+      currentPointIndex++;
+    }
+  }
+
+  return playlist;
 }

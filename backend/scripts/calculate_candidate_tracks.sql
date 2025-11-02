@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION public.calculate_candidate_tracks(
   p_journey_id uuid,
   p_max_symm_diff integer DEFAULT 4,
-  p_max_candidates integer DEFAULT 50
+  p_max_candidates integer DEFAULT 300 --good enough- higher better but we have limited vseconds
 ) RETURNS jsonb
 LANGUAGE plpgsql
 AS $$
